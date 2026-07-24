@@ -1,0 +1,109 @@
+.invite-action {
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 5px 0;
+  background: transparent;
+  color: var(--terracotta);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.request-count {
+  padding: 6px 9px;
+  border-radius: 20px;
+  background: #f3e4dc;
+  color: var(--terracotta);
+  font-size: 11px;
+}
+
+.request-inbox {
+  display: grid;
+  gap: 12px;
+}
+
+.request-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.request-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.request-card-head strong,
+.request-card-head small {
+  display: block;
+}
+
+.request-card-head small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.request-card-head > span {
+  height: fit-content;
+  padding: 4px 7px;
+  border-radius: 16px;
+  background: #f2e3da;
+  color: #8b5242;
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.request-card p {
+  margin: 9px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.request-card .admin-reply {
+  padding: 9px;
+  border-radius: 8px;
+  background: #f7eee8;
+  color: var(--ink);
+}
+
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.request-actions button {
+  min-height: 44px;
+}
+
+.invite-modal {
+  display: grid;
+  gap: 12px;
+}
+
+.checkbox-field {
+  display: flex !important;
+  align-items: center;
+}
+
+.checkbox-field input {
+  width: 22px;
+  min-height: 22px;
+}
+
+.mobile-nav {
+  grid-template-columns: repeat(6, 1fr) !important;
+}
+
+@media (max-width: 700px) {
+  .request-actions {
+    display: grid;
+  }
+
+  .mobile-nav button {
+    min-width: 0;
+    font-size: 8px;
+  }
+}

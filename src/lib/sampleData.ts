@@ -18,7 +18,7 @@ export const seededData: SalonData = {
     { id:'m2', clientId:'c2', senderName:'Marta Rukavina', senderPhone:'0913344556', text:'Kasnit ću oko 10 minuta, javim kad krenem.', createdAt:'2026-07-24T11:20:00', read:true },
   ],
   hairstyles: [
-    { id:'h1', clientId:'c1', date:'2026-06-20', before:createMonogramImage('PRIJE','soft'), after:createMonogramImage('POSLIJE','warm'), note:'Mekani slojevi i hladniji ton pepeljasto-plave.', createdAt:now },
+    { id:'h1', clientId:'c1', date:'2026-06-20', before:createMonogramImage('PRIJE','soft'), after:createMonogramImage('POSLIJE','warm'), note:'Mekani slojevi i hladniji ton pepeljasto-plave.', visibleToClient:true, createdAt:now },
     { id:'h2', clientId:'c3', date:'2026-07-10', before:createMonogramImage('PRIJE','soft'), after:createMonogramImage('POSLIJE','warm'), note:'Svečana punđa s laganim volumenom.', createdAt:now },
   ],
 }

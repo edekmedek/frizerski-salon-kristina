@@ -47,6 +47,7 @@ export interface HairstyleArchiveEntry {
   after?: ImageAsset
   note: string
   createdAt: string
+  visibleToClient?: boolean
 }
 
 export interface SalonData {
