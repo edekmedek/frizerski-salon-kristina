@@ -1,116 +1,118 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Appointment } from './types'
-import type { ClientRequest, DayPeriod, PortalData, RequestKind } from './portalTypes'
 import { formatDate, formatDateTime } from './lib/date'
-import { loadSalonData, uid } from './lib/storage'
-import { loadPortalData, savePortalData } from './lib/portalStorage'
-import { DemoReminderProvider, runDueDemoReminders } from './lib/reminders'
+import { supabase } from './lib/supabase'
 import './Portal.css'
 
 const serviceNames = ['Žensko šišanje', 'Muško šišanje', 'Feniranje', 'Bojanje', 'Pramenovi', 'Svečana frizura']
+type Section = 'home' | 'request' | 'appointments' | 'messages' | 'photos'
+interface ClientRow { id: string; first_name: string; last_name: string }
+interface AppointmentRow { id: string; starts_at: string; ends_at: string | null; service: string | null; notes: string | null; status: string }
+interface RequestRow { id: string; kind: string; service: string | null; preferred_dates: string[]; day_period: string; client_message: string; status: string; admin_reply: string; appointment_id: string | null; created_at: string; updated_at: string }
+interface MessageRow { id: string; sender: string; message: string; created_at: string }
+interface ReminderRow { id: string; title: string; body: string; scheduled_for: string; status: string }
+interface PhotoRow { id: string; image_path: string; thumbnail_path: string; notes: string | null; taken_at: string }
+interface ClientPhoto extends PhotoRow { url: string }
 
 export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogout: () => void }) {
-  const salon = loadSalonData()
-  const client = salon.clients.find((item) => item.id === clientId)
-  const [portal, setPortal] = useState<PortalData>(() => loadPortalData())
-  const [portalNow] = useState(() => Date.now())
-  const [section, setSection] = useState<'home' | 'request' | 'appointments' | 'messages' | 'photos'>('home')
-  const [detail, setDetail] = useState<Appointment | null>(null)
+  const [client, setClient] = useState<ClientRow | null>(null)
+  const [appointments, setAppointments] = useState<AppointmentRow[]>([])
+  const [requests, setRequests] = useState<RequestRow[]>([])
+  const [messages, setMessages] = useState<MessageRow[]>([])
+  const [reminders, setReminders] = useState<ReminderRow[]>([])
+  const [photos, setPhotos] = useState<ClientPhoto[]>([])
+  const [section, setSection] = useState<Section>('home')
+  const [detail, setDetail] = useState<AppointmentRow | null>(null)
   const [notice, setNotice] = useState('')
-  const ownAppointments = useMemo(
-    () => salon.appointments
-      .filter((item) => item.clientId === clientId && item.status === 'zakazan' && new Date(item.dateTime).getTime() >= portalNow)
-      .sort((a, b) => a.dateTime.localeCompare(b.dateTime)),
-    [salon.appointments, clientId, portalNow],
-  )
-  const ownRequests = portal.requests.filter((item) => item.clientId === clientId)
-  const ownNotifications = portal.notifications
-    .filter((item) => item.clientId === clientId && item.status === 'delivered')
-    .sort((a, b) => b.scheduledFor.localeCompare(a.scheduledFor))
-  const ownPhotos = salon.hairstyles.filter(
-    (item) => item.clientId === clientId && item.visibleToClient === true,
-  )
+  const [loading, setLoading] = useState(true)
+  const [portalNow] = useState(() => Date.now())
+  const upcoming = useMemo(() => appointments.filter(item => item.status === 'confirmed' && new Date(item.starts_at).getTime() >= portalNow).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)), [appointments, portalNow])
 
   useEffect(() => {
-    void runDueDemoReminders(loadPortalData().notifications, new DemoReminderProvider()).then(
-      (notifications) => {
-        const latest = loadPortalData()
-        const next = { ...latest, notifications }
-        savePortalData(next)
-        setPortal(next)
-      },
-    )
-  }, [])
+    let active = true
+    async function load() {
+      const supabaseClient = supabase
+      if (!supabaseClient) return
+      const [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult] = await Promise.all([
+        supabaseClient.from('clients').select('id,first_name,last_name').eq('id', clientId).maybeSingle(),
+        supabaseClient.from('appointments').select('id,starts_at,ends_at,service,notes,status').eq('client_id', clientId),
+        supabaseClient.from('client_requests').select('id,kind,service,preferred_dates,day_period,client_message,status,admin_reply,appointment_id,created_at,updated_at').eq('client_id', clientId),
+        supabaseClient.from('messages').select('id,sender,message,created_at').eq('client_id', clientId).order('created_at', { ascending: false }),
+        supabaseClient.from('appointment_reminders').select('id,title,body,scheduled_for,status').eq('client_id', clientId).eq('status', 'delivered').order('scheduled_for', { ascending: false }),
+        supabaseClient.from('hairstyle_photos').select('id,image_path,thumbnail_path,notes,taken_at').eq('client_id', clientId).eq('visible_to_client', true).order('taken_at', { ascending: false }),
+      ])
+      const firstError = [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult].find(result => result.error)?.error
+      if (firstError) {
+        if (active) { setNotice('Podatke portala trenutačno nije moguće učitati.'); setLoading(false) }
+        return
+      }
+      const signedPhotos = await Promise.all(((photoResult.data ?? []) as PhotoRow[]).map(async photo => {
+        const { data } = await supabaseClient.storage.from('client-photos').createSignedUrl(photo.thumbnail_path || photo.image_path, 300)
+        return { ...photo, url: data?.signedUrl ?? '' }
+      }))
+      if (!active) return
+      setClient(clientResult.data as ClientRow | null)
+      setAppointments((appointmentResult.data ?? []) as AppointmentRow[])
+      setRequests((requestResult.data ?? []) as RequestRow[])
+      setMessages((messageResult.data ?? []) as MessageRow[])
+      setReminders((reminderResult.data ?? []) as ReminderRow[])
+      setPhotos(signedPhotos.filter(photo => photo.url))
+      setLoading(false)
+    }
+    void load()
+    return () => { active = false }
+  }, [clientId])
 
-  if (!client) {
-    return <main className="access-page"><section className="access-card"><h1>Pristup nije dostupan</h1><p>Prijavite se ponovno osobnom poveznicom salona.</p><button className="primary" onClick={onLogout}>Odjava</button></section></main>
-  }
-
-  function saveRequest(event: React.FormEvent<HTMLFormElement>) {
+  async function saveRequest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!supabase) return
     const form = new FormData(event.currentTarget)
-    const dates = form.getAll('preferredDates').map(String).filter(Boolean)
-    if (!dates.length) { setNotice('Dodajte barem jedan poželjni dan.'); return }
-    const now = new Date().toISOString()
-    const request: ClientRequest = {
-      id: uid('request'), clientId, kind: 'termin', service: String(form.get('service')),
-      preferredDates: dates, dayPeriod: String(form.get('dayPeriod')) as DayPeriod,
-      message: String(form.get('message') || ''), status: 'novo', adminReply: '',
-      createdAt: now, updatedAt: now,
+    const preferredDates = form.getAll('preferredDates').map(String).filter(Boolean)
+    if (!preferredDates.length) { setNotice('Dodajte barem jedan poželjni dan.'); return }
+    const payload = {
+      client_id: clientId,
+      kind: 'appointment',
+      service: String(form.get('service')),
+      preferred_dates: preferredDates,
+      day_period: String(form.get('dayPeriod')),
+      client_message: String(form.get('message') || ''),
     }
-    const next = { ...portal, requests: [request, ...portal.requests] }
-    savePortalData(next); setPortal(next); setNotice('Želja je poslana Kristini.'); setSection('home')
+    const { data, error } = await supabase.from('client_requests').insert(payload).select().single()
+    if (error) { setNotice('Zahtjev nije bilo moguće poslati.'); return }
+    setRequests(current => [data as RequestRow, ...current])
+    setNotice('Želja je poslana Kristini.')
+    setSection('home')
   }
 
-  function requestAppointmentChange(appointment: Appointment, kind: RequestKind) {
-    const text = window.prompt(kind === 'otkazivanje' ? 'Napišite razlog zahtjeva za otkazivanje:' : 'Napišite što želite promijeniti:')
+  async function requestChange(appointment: AppointmentRow, kind: 'change' | 'cancellation') {
+    if (!supabase) return
+    const text = window.prompt(kind === 'cancellation' ? 'Napišite razlog zahtjeva za otkazivanje:' : 'Napišite što želite promijeniti:')
     if (text === null) return
-    const now = new Date().toISOString()
-    const request: ClientRequest = {
-      id: uid('request'), clientId, kind, service: appointment.service,
-      preferredDates: [appointment.dateTime.slice(0, 10)], dayPeriod: 'svejedno',
-      message: text, status: 'novo', adminReply: '', appointmentId: appointment.id,
-      createdAt: now, updatedAt: now,
-    }
-    const next = { ...portal, requests: [request, ...portal.requests] }
-    savePortalData(next); setPortal(next); setDetail(null); setNotice('Zahtjev je poslan. Termin nije promijenjen dok Kristina ne potvrdi.')
+    const { data, error } = await supabase.from('client_requests').insert({
+      client_id: clientId, kind, service: appointment.service,
+      preferred_dates: [appointment.starts_at.slice(0,10)], day_period: 'any',
+      client_message: text, appointment_id: appointment.id,
+    }).select().single()
+    if (error) { setNotice('Zahtjev nije bilo moguće poslati.'); return }
+    setRequests(current => [data as RequestRow, ...current])
+    setDetail(null)
+    setNotice('Zahtjev je poslan. Termin se ne mijenja dok Kristina ne potvrdi.')
   }
 
+  if (loading) return <main className="access-page"><section className="access-card"><h1>Učitavanje portala…</h1></section></main>
+  if (!client) return <main className="access-page"><section className="access-card"><h1>Pristup nije dostupan</h1><p>Prijavite se ponovno.</p><button className="primary" onClick={onLogout}>Odjava</button></section></main>
+
+  const inboxCount = messages.filter(item=>item.sender==='admin').length + reminders.length + requests.filter(item=>item.admin_reply).length
   return <div className="client-portal">
-    <header className="client-header"><div><p className="eyebrow">SALON KRISTINA</p><h1>Pozdrav, {client.firstName}</h1></div><button className="secondary" onClick={onLogout}>Odjava</button></header>
-    <nav className="client-nav">
-      <button className={section === 'home' ? 'active' : ''} onClick={() => setSection('home')}>Pregled</button>
-      <button className={section === 'appointments' ? 'active' : ''} onClick={() => setSection('appointments')}>Termini</button>
-      <button className={section === 'messages' ? 'active' : ''} onClick={() => setSection('messages')}>Poruke</button>
-      <button className={section === 'photos' ? 'active' : ''} onClick={() => setSection('photos')}>Fotografije</button>
-    </nav>
+    <header className="client-header"><div><p className="eyebrow">SALON KRISTINA</p><h1>Pozdrav, {client.first_name}</h1></div><button className="secondary" onClick={onLogout}>Odjava</button></header>
+    <nav className="client-nav"><button className={section==='home'?'active':''} onClick={()=>setSection('home')}>Pregled</button><button className={section==='appointments'?'active':''} onClick={()=>setSection('appointments')}>Termini</button><button className={section==='messages'?'active':''} onClick={()=>setSection('messages')}>Poruke</button><button className={section==='photos'?'active':''} onClick={()=>setSection('photos')}>Fotografije</button></nav>
     <main className="client-content">
-      {notice && <p className="portal-notice" role="status">{notice}</p>}
-      {section === 'home' && <>
-        <section className="client-hero"><p className="eyebrow">SLJEDEĆI POTVRĐENI TERMIN</p>{ownAppointments[0] ? <><h2>{formatDateTime(ownAppointments[0].dateTime)}</h2><p>{ownAppointments[0].service}</p><button className="link" onClick={() => setDetail(ownAppointments[0])}>Detalji termina →</button></> : <><h2>Još nema potvrđenog termina</h2><p>Pošaljite želju, a Kristina će vam se javiti.</p></>}</section>
-        <button className="primary wide-action" onClick={() => setSection('request')}>Pošalji želju za termin</button>
-        <div className="client-summary">
-          <button onClick={() => setSection('appointments')}><strong>{ownAppointments.length}</strong><span>Budući termini</span></button>
-          <button onClick={() => setSection('messages')}><strong>{ownNotifications.length + ownRequests.filter((item) => item.adminReply).length}</strong><span>Poruke salona</span></button>
-          <button onClick={() => setSection('photos')}><strong>{ownPhotos.length}</strong><span>Moje fotografije</span></button>
-        </div>
-      </>}
-
-      {section === 'request' && <section className="client-card-section"><h2>Želja za termin</h2><p className="important-note">Ovo nije rezervacija. Kristina će pregledati vašu želju i potvrditi termin.</p><form onSubmit={saveRequest}>
-        <label>Željena usluga<select required name="service" defaultValue=""><option value="" disabled>Odaberite uslugu</option>{serviceNames.map((name) => <option key={name}>{name}</option>)}</select></label>
-        <fieldset><legend>Poželjni dani</legend><input required name="preferredDates" type="date" /><input name="preferredDates" type="date" /><input name="preferredDates" type="date" /></fieldset>
-        <label>Dio dana<select name="dayPeriod" defaultValue="svejedno"><option value="prijepodne">Prijepodne</option><option value="poslijepodne">Poslijepodne</option><option value="svejedno">Svejedno</option></select></label>
-        <label>Dodatne želje<textarea name="message" rows={4} placeholder="Napišite sve što je Kristini važno znati…" /></label>
-        <button className="primary" type="submit">Pošalji želju Kristini</button>
-        <button className="secondary" type="button" onClick={() => setSection('home')}>Odustani</button>
-      </form></section>}
-
-      {section === 'appointments' && <section className="client-card-section"><h2>Moji budući termini</h2>{ownAppointments.length ? <div className="portal-list">{ownAppointments.map((item) => <button key={item.id} onClick={() => setDetail(item)}><div><strong>{formatDateTime(item.dateTime)}</strong><span>{item.service}</span></div><b>Potvrđeno</b></button>)}</div> : <p className="empty-state">Nema budućih potvrđenih termina.</p>}</section>}
-
-      {section === 'messages' && <section className="client-card-section"><h2>Poruke salona</h2><div className="portal-messages">{ownRequests.filter((item) => item.adminReply).map((item) => <article key={item.id}><small>{formatDate(item.updatedAt)}</small><strong>Odgovor na vaš zahtjev</strong><p>{item.adminReply}</p></article>)}{ownNotifications.map((item) => <article key={item.id}><small>{formatDateTime(item.scheduledFor)}</small><strong>{item.title}</strong><p>{item.text}</p></article>)}{!ownNotifications.length && !ownRequests.some((item) => item.adminReply) && <p className="empty-state">Još nema poruka salona.</p>}</div></section>}
-
-      {section === 'photos' && <section className="client-card-section"><h2>Moje fotografije</h2>{ownPhotos.length ? <div className="client-photo-grid">{ownPhotos.map((item) => <article key={item.id}><img src={(item.after ?? item.before).thumb} alt="Frizura iz privatne arhive" /><div><strong>{formatDate(item.date)}</strong><p>{item.note}</p></div></article>)}</div> : <p className="empty-state">Kristina još nije podijelila fotografije s vama.</p>}<p className="privacy-note">Fotografije su privatne i dostupne samo vama i salonu.</p></section>}
+      {notice&&<p className="portal-notice" role="status">{notice}</p>}
+      {section==='home'&&<><section className="client-hero"><p className="eyebrow">SLJEDEĆI POTVRĐENI TERMIN</p>{upcoming[0]?<><h2>{formatDateTime(upcoming[0].starts_at)}</h2><p>{upcoming[0].service}</p><button className="link" onClick={()=>setDetail(upcoming[0])}>Detalji termina →</button></>:<><h2>Još nema potvrđenog termina</h2><p>Pošaljite želju, a Kristina će vam se javiti.</p></>}</section><button className="primary wide-action" onClick={()=>setSection('request')}>Pošalji želju za termin</button><div className="client-summary"><button onClick={()=>setSection('appointments')}><strong>{upcoming.length}</strong><span>Budući termini</span></button><button onClick={()=>setSection('messages')}><strong>{inboxCount}</strong><span>Poruke salona</span></button><button onClick={()=>setSection('photos')}><strong>{photos.length}</strong><span>Moje fotografije</span></button></div></>}
+      {section==='request'&&<section className="client-card-section"><h2>Želja za termin</h2><p className="important-note">Ovo nije rezervacija. Kristina će pregledati vašu želju i potvrditi termin.</p><form onSubmit={event=>void saveRequest(event)}><label>Željena usluga<select required name="service" defaultValue=""><option value="" disabled>Odaberite uslugu</option>{serviceNames.map(name=><option key={name}>{name}</option>)}</select></label><fieldset><legend>Poželjni dani</legend><input required name="preferredDates" type="date"/><input name="preferredDates" type="date"/><input name="preferredDates" type="date"/></fieldset><label>Dio dana<select name="dayPeriod" defaultValue="any"><option value="morning">Prijepodne</option><option value="afternoon">Poslijepodne</option><option value="any">Svejedno</option></select></label><label>Dodatne želje<textarea name="message" rows={4}/></label><button className="primary" type="submit">Pošalji želju Kristini</button><button className="secondary" type="button" onClick={()=>setSection('home')}>Odustani</button></form></section>}
+      {section==='appointments'&&<section className="client-card-section"><h2>Moji budući termini</h2>{upcoming.length?<div className="portal-list">{upcoming.map(item=><button key={item.id} onClick={()=>setDetail(item)}><div><strong>{formatDateTime(item.starts_at)}</strong><span>{item.service}</span></div><b>Potvrđeno</b></button>)}</div>:<p className="empty-state">Nema budućih potvrđenih termina.</p>}</section>}
+      {section==='messages'&&<section className="client-card-section"><h2>Poruke salona</h2><div className="portal-messages">{requests.filter(item=>item.admin_reply).map(item=><article key={item.id}><small>{formatDate(item.updated_at)}</small><strong>Odgovor na vaš zahtjev</strong><p>{item.admin_reply}</p></article>)}{messages.filter(item=>item.sender==='admin').map(item=><article key={item.id}><small>{formatDateTime(item.created_at)}</small><strong>Poruka salona</strong><p>{item.message}</p></article>)}{reminders.map(item=><article key={item.id}><small>{formatDateTime(item.scheduled_for)}</small><strong>{item.title}</strong><p>{item.body}</p></article>)}{!inboxCount&&<p className="empty-state">Još nema poruka salona.</p>}</div></section>}
+      {section==='photos'&&<section className="client-card-section"><h2>Moje fotografije</h2>{photos.length?<div className="client-photo-grid">{photos.map(item=><article key={item.id}><img src={item.url} alt="Frizura iz privatne arhive"/><div><strong>{formatDate(item.taken_at)}</strong><p>{item.notes}</p></div></article>)}</div>:<p className="empty-state">Kristina još nije podijelila fotografije s vama.</p>}<p className="privacy-note">Fotografije koriste kratkotrajne autorizirane adrese.</p></section>}
     </main>
-    {detail && <div className="portal-modal-backdrop"><section className="portal-modal" role="dialog" aria-modal="true"><button className="modal-close" onClick={() => setDetail(null)}>×</button><p className="eyebrow">POTVRĐENI TERMIN</p><h2>{formatDateTime(detail.dateTime)}</h2><p><strong>{detail.service}</strong></p>{detail.note && <p>{detail.note}</p>}<div className="portal-modal-actions"><button className="secondary" onClick={() => requestAppointmentChange(detail, 'promjena')}>Zatraži promjenu</button><button className="danger-action" onClick={() => requestAppointmentChange(detail, 'otkazivanje')}>Zatraži otkazivanje</button></div><p className="privacy-note">Zahtjev ne mijenja termin dok ga Kristina ne potvrdi.</p></section></div>}
+    {detail&&<div className="portal-modal-backdrop"><section className="portal-modal" role="dialog" aria-modal="true"><button className="modal-close" onClick={()=>setDetail(null)}>×</button><p className="eyebrow">POTVRĐENI TERMIN</p><h2>{formatDateTime(detail.starts_at)}</h2><p><strong>{detail.service}</strong></p>{detail.notes&&<p>{detail.notes}</p>}<div className="portal-modal-actions"><button className="secondary" onClick={()=>void requestChange(detail,'change')}>Zatraži promjenu</button><button className="danger-action" onClick={()=>void requestChange(detail,'cancellation')}>Zatraži otkazivanje</button></div></section></div>}
   </div>
 }

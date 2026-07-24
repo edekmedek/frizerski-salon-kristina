@@ -5,8 +5,6 @@ const SESSION_KEY = 'frizerski-salon-kristina/session/v1'
 
 const emptyPortalData: PortalData = {
   requests: [],
-  invitations: [],
-  credentials: [],
   notifications: [],
 }
 
@@ -15,8 +13,6 @@ export function loadPortalData(): PortalData {
     const parsed = JSON.parse(localStorage.getItem(PORTAL_KEY) || '{}') as Partial<PortalData>
     return {
       requests: parsed.requests ?? [],
-      invitations: parsed.invitations ?? [],
-      credentials: parsed.credentials ?? [],
       notifications: parsed.notifications ?? [],
     }
   } catch {

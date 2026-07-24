@@ -18,21 +18,6 @@ export interface ClientRequest {
   updatedAt: string
 }
 
-export interface ClientInvitation {
-  id: string
-  clientId: string
-  tokenHash: string
-  expiresAt: string
-  consumedAt?: string
-}
-
-export interface ClientCredential {
-  clientId: string
-  phoneVerifiedAt: string
-  pinSalt?: string
-  pinHash?: string
-}
-
 export type ReminderKind = 'day_before' | 'hour_before' | 'manual'
 export type ReminderStatus = 'scheduled' | 'delivered' | 'cancelled'
 
@@ -50,8 +35,6 @@ export interface ClientNotification {
 
 export interface PortalData {
   requests: ClientRequest[]
-  invitations: ClientInvitation[]
-  credentials: ClientCredential[]
   notifications: ClientNotification[]
 }
 

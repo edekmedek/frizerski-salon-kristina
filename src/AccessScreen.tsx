@@ -1,166 +1,165 @@
 import { useMemo, useState } from 'react'
-import {
-  createPinCredential,
-  DEMO_ADMIN_PIN,
-  DEMO_SMS_CODE,
-  findValidInvitation,
-  phoneMatches,
-  verifyPin,
-} from './lib/demoAuth'
-import { loadPortalData, savePortalData, setPortalSession } from './lib/portalStorage'
-import { loadSalonData } from './lib/storage'
+import { setPortalSession } from './lib/portalStorage'
+import { supabase } from './lib/supabase'
 import './Portal.css'
 
-type AccessMode = 'home' | 'admin' | 'client' | 'invite'
-type InviteStage = 'phone' | 'code' | 'pin'
+type AccessMode = 'home' | 'admin' | 'client' | 'activate' | 'change-pin'
+
+interface LoginResult {
+  client_id: string | null
+  must_change_pin: boolean
+  authenticated: boolean
+}
+
+async function ensureAnonymousSession() {
+  if (!supabase) throw new Error('Supabase nije konfiguriran.')
+  const { data: current } = await supabase.auth.getSession()
+  if (current.session?.user.is_anonymous) return current.session
+  if (current.session) await supabase.auth.signOut()
+  const { data, error } = await supabase.auth.signInAnonymously()
+  if (error || !data.session) throw error ?? new Error('Anonimna sesija nije dostupna.')
+  return data.session
+}
 
 export function AccessScreen() {
-  const token = useMemo(() => {
-    const match = window.location.hash.match(/^#\/client\/invite\/(.+)$/)
+  const accessToken = useMemo(() => {
+    const match = window.location.hash.match(/^#\/client\/access\/([a-f0-9]+)$/i)
     return match?.[1] ?? ''
   }, [])
-  const [mode, setMode] = useState<AccessMode>(token ? 'invite' : 'home')
-  const [inviteStage, setInviteStage] = useState<InviteStage>('phone')
+  const [mode, setMode] = useState<AccessMode>(accessToken ? 'activate' : 'home')
   const [phone, setPhone] = useState('')
-  const [code, setCode] = useState('')
   const [pin, setPin] = useState('')
-  const [adminPin, setAdminPin] = useState('')
-  const [verifiedClientId, setVerifiedClientId] = useState('')
+  const [pinConfirm, setPinConfirm] = useState('')
+  const [temporaryPin, setTemporaryPin] = useState('')
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+  const [clientId, setClientId] = useState('')
   const [message, setMessage] = useState('')
+  const [working, setWorking] = useState(false)
 
-  function enterAdmin(event: React.FormEvent) {
+  function validPinsMatch() {
+    if (!/^\d{4}$/.test(pin)) {
+      setMessage('PIN mora imati točno četiri znamenke.')
+      return false
+    }
+    if ((mode === 'activate' || mode === 'change-pin') && pin !== pinConfirm) {
+      setMessage('Uneseni PIN-ovi nisu jednaki.')
+      return false
+    }
+    return true
+  }
+
+  async function enterAdmin(event: React.FormEvent) {
     event.preventDefault()
-    if (adminPin !== DEMO_ADMIN_PIN) {
+    if (!supabase) return setMessage('Supabase nije konfiguriran.')
+    setWorking(true)
+    setMessage('')
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: adminEmail,
+        password: adminPassword,
+      })
+      if (error || !data.user) throw error ?? new Error('Prijava nije uspjela.')
+      const { data: role, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+      if (roleError || role?.role !== 'admin') {
+        await supabase.auth.signOut()
+        throw new Error('Pristupni podaci nisu ispravni.')
+      }
+      setPortalSession({ role: 'administrator' })
+    } catch {
       setMessage('Pristupni podaci nisu ispravni.')
-      return
+    } finally {
+      setWorking(false)
     }
-    setPortalSession({ role: 'administrator' })
   }
 
-  async function beginInvite(event: React.FormEvent) {
+  async function activatePortal(event: React.FormEvent) {
     event.preventDefault()
-    const portal = loadPortalData()
-    const invitation = await findValidInvitation(portal, token)
-    const client = invitation
-      ? loadSalonData().clients.find((item) => item.id === invitation.clientId)
-      : undefined
-    if (!invitation || !client || !phoneMatches(client, phone)) {
-      setMessage('Podatke nije moguće potvrditi. Provjerite pozivnicu i uneseni broj.')
-      return
+    if (!validPinsMatch() || !supabase) return
+    setWorking(true)
+    setMessage('')
+    try {
+      await ensureAnonymousSession()
+      const { data, error } = await supabase.rpc('activate_client_portal', {
+        access_token: accessToken,
+        phone_value: phone,
+        permanent_pin: pin,
+      })
+      const result = (data as { client_id: string; must_change_pin: boolean }[] | null)?.[0]
+      if (error || !result?.client_id) throw error ?? new Error('Aktivacija nije uspjela.')
+      setPortalSession({ role: 'client', clientId: result.client_id })
+    } catch {
+      setMessage('Pristup nije moguće potvrditi. Provjerite adresu i broj telefona.')
+    } finally {
+      setWorking(false)
     }
-    setVerifiedClientId(client.id)
-    setInviteStage('code')
-    setMessage('Demo način: SMS nije poslan. Za nastavak unesite kod 123456.')
-  }
-
-  function confirmDemoCode(event: React.FormEvent) {
-    event.preventDefault()
-    if (code !== DEMO_SMS_CODE) {
-      setMessage('Kod nije ispravan ili je istekao.')
-      return
-    }
-    setInviteStage('pin')
-    setMessage('Broj je potvrđen. Postavite PIN za sljedeću prijavu.')
-  }
-
-  async function savePin(event: React.FormEvent) {
-    event.preventDefault()
-    if (!/^\d{4,6}$/.test(pin)) {
-      setMessage('PIN mora imati od 4 do 6 znamenki.')
-      return
-    }
-    const portal = loadPortalData()
-    const invitation = await findValidInvitation(portal, token)
-    if (!invitation || invitation.clientId !== verifiedClientId) {
-      setMessage('Pozivnica više nije valjana.')
-      return
-    }
-    const credential = await createPinCredential(verifiedClientId, pin)
-    savePortalData({
-      ...portal,
-      invitations: portal.invitations.map((item) =>
-        item.id === invitation.id ? { ...item, consumedAt: new Date().toISOString() } : item,
-      ),
-      credentials: [
-        ...portal.credentials.filter((item) => item.clientId !== verifiedClientId),
-        credential,
-      ],
-    })
-    setPortalSession({ role: 'client', clientId: verifiedClientId })
   }
 
   async function loginClient(event: React.FormEvent) {
     event.preventDefault()
-    const salon = loadSalonData()
-    const portal = loadPortalData()
-    const client = salon.clients.find((item) => phoneMatches(item, phone))
-    const credential = client
-      ? portal.credentials.find((item) => item.clientId === client.id)
-      : undefined
-    if (!client || !credential || !(await verifyPin(credential, pin))) {
+    if (!/^\d{4}$/.test(pin) || !supabase) {
       setMessage('Pristupni podaci nisu ispravni.')
       return
     }
-    setPortalSession({ role: 'client', clientId: client.id })
+    setWorking(true)
+    setMessage('')
+    try {
+      await ensureAnonymousSession()
+      const { data, error } = await supabase.rpc('login_client_portal', {
+        phone_value: phone,
+        pin_value: pin,
+      })
+      const result = (data as LoginResult[] | null)?.[0]
+      if (error || !result?.authenticated || !result.client_id) {
+        throw error ?? new Error('Prijava nije uspjela.')
+      }
+      if (result.must_change_pin) {
+        setClientId(result.client_id)
+        setTemporaryPin(pin)
+        setPin('')
+        setPinConfirm('')
+        setMode('change-pin')
+        setMessage('Privremeni PIN vrijedi samo za ovaj ulazak. Postavite novi stalni PIN.')
+        return
+      }
+      setPortalSession({ role: 'client', clientId: result.client_id })
+    } catch {
+      setMessage('Pristupni podaci nisu ispravni ili je pristup privremeno blokiran.')
+    } finally {
+      setWorking(false)
+    }
   }
 
-  return (
-    <main className="access-page">
-      <section className="access-card">
-        <div className="portal-brand"><span>K</span><div><strong>Salon Kristina</strong><small>Topla elegancija</small></div></div>
-        {mode === 'home' && <>
-          <p className="eyebrow">DOBRO DOŠLI</p>
-          <h1>Odaberite ulaz</h1>
-          <p className="access-intro">Klijentski portal i Kristinin administratorski prostor potpuno su odvojeni.</p>
-          <div className="access-choices">
-            <button className="primary" onClick={() => setMode('client')}>Ulaz za klijente</button>
-            <button className="secondary" onClick={() => setMode('admin')}>Kristinin ulaz</button>
-          </div>
-        </>}
+  async function changeTemporaryPin(event: React.FormEvent) {
+    event.preventDefault()
+    if (!validPinsMatch() || !supabase || !clientId) return
+    setWorking(true)
+    try {
+      if (!temporaryPin) throw new Error('Privremeni PIN nije dostupan.')
+      const { error } = await supabase.rpc('change_client_portal_pin', {
+        current_pin: temporaryPin,
+        new_permanent_pin: pin,
+      })
+      if (error) throw error
+      setTemporaryPin('')
+      setPortalSession({ role: 'client', clientId })
+    } catch {
+      setMessage('PIN nije bilo moguće promijeniti. Prijavite se ponovno.')
+    } finally {
+      setWorking(false)
+    }
+  }
 
-        {mode === 'admin' && <form onSubmit={enterAdmin}>
-          <h1>Kristinin ulaz</h1>
-          <p className="demo-banner">Lokalni demo način · PIN: 2468</p>
-          <label>Administratorski PIN<input type="password" inputMode="numeric" required value={adminPin} onChange={(event) => setAdminPin(event.target.value)} /></label>
-          {message && <p className="form-message" role="alert">{message}</p>}
-          <button className="primary" type="submit">Prijavi se</button>
-          <button className="link" type="button" onClick={() => { setMode('home'); setMessage('') }}>Natrag</button>
-        </form>}
-
-        {mode === 'client' && <form onSubmit={(event) => void loginClient(event)}>
-          <h1>Ulaz za klijente</h1>
-          <p>Prva prijava moguća je samo osobnim pozivnim linkom salona.</p>
-          <label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
-          <label>PIN<input type="password" inputMode="numeric" autoComplete="current-password" required value={pin} onChange={(event) => setPin(event.target.value)} /></label>
-          {message && <p className="form-message" role="alert">{message}</p>}
-          <button className="primary" type="submit">Prijavi se</button>
-          <button className="link" type="button" onClick={() => { setMode('home'); setMessage('') }}>Natrag</button>
-        </form>}
-
-        {mode === 'invite' && <>
-          {inviteStage === 'phone' && <form onSubmit={(event) => void beginInvite(event)}>
-            <h1>Aktivirajte svoj pristup</h1>
-            <p>Unesite broj mobitela povezan s osobnom pozivnicom.</p>
-            <label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
-            {message && <p className="form-message" role="alert">{message}</p>}
-            <button className="primary" type="submit">Nastavi</button>
-          </form>}
-          {inviteStage === 'code' && <form onSubmit={confirmDemoCode}>
-            <h1>Potvrdite broj</h1>
-            <p className="demo-banner">Demo način: SMS nije poslan. Kod je 123456.</p>
-            <label>Jednokratni kod<input inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(event) => setCode(event.target.value)} /></label>
-            {message && <p className="form-message">{message}</p>}
-            <button className="primary" type="submit">Potvrdi</button>
-          </form>}
-          {inviteStage === 'pin' && <form onSubmit={(event) => void savePin(event)}>
-            <h1>Postavite PIN</h1>
-            <p>PIN se sigurnosno izvodi PBKDF2 algoritmom i ne sprema se kao običan tekst.</p>
-            <label>Novi PIN<input type="password" inputMode="numeric" autoComplete="new-password" minLength={4} maxLength={6} required value={pin} onChange={(event) => setPin(event.target.value)} /></label>
-            {message && <p className="form-message">{message}</p>}
-            <button className="primary" type="submit">Aktiviraj portal</button>
-          </form>}
-        </>}
-      </section>
-    </main>
-  )
+  return <main className="access-page"><section className="access-card">
+    <div className="portal-brand"><span>K</span><div><strong>Salon Kristina</strong><small>Topla elegancija</small></div></div>
+    {mode === 'home' && <><p className="eyebrow">DOBRO DOŠLI</p><h1>Odaberite ulaz</h1><p className="access-intro">Klijentski portal i Kristinin administratorski prostor potpuno su odvojeni.</p><div className="access-choices"><button className="primary" onClick={() => setMode('client')}>Ulaz za klijente</button><button className="secondary" onClick={() => setMode('admin')}>Kristinin ulaz</button></div></>}
+    {mode === 'admin' && <form onSubmit={event => void enterAdmin(event)}><h1>Kristinin ulaz</h1><label>E-mail<input type="email" autoComplete="username" required value={adminEmail} onChange={event => setAdminEmail(event.target.value)}/></label><label>Lozinka<input type="password" autoComplete="current-password" required value={adminPassword} onChange={event => setAdminPassword(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button><button className="link" type="button" onClick={() => {setMode('home');setMessage('')}}>Natrag</button></form>}
+    {mode === 'client' && <form onSubmit={event=>void loginClient(event)}><h1>Ulaz za klijente</h1><p>Prijavite se brojem mobitela i četveroznamenkastim PIN-om.</p><label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event=>setPhone(event.target.value)}/></label><label>PIN<input type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button><button className="link" type="button" onClick={()=>{setMode('home');setMessage('')}}>Natrag</button></form>}
+    {mode === 'activate' && <form onSubmit={event=>void activatePortal(event)}><h1>Aktivirajte pristup</h1><p>Unesite svoj broj mobitela i odaberite stalni četveroznamenkasti PIN.</p><label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event=>setPhone(event.target.value)}/></label><label>Novi PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,4))}/></label><label>Potvrdite PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pinConfirm} onChange={event=>setPinConfirm(event.target.value.replace(/\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Aktivacija…':'Aktiviraj portal'}</button></form>}
+    {mode === 'change-pin' && <form onSubmit={event=>void changeTemporaryPin(event)}><h1>Postavite stalni PIN</h1><p className="important-note">Prije nastavka morate zamijeniti privremeni PIN.</p><label>Novi stalni PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,4))}/></label><label>Potvrdite PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pinConfirm} onChange={event=>setPinConfirm(event.target.value.replace(/\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Spremanje…':'Spremi stalni PIN'}</button></form>}
+  </section></main>
 }

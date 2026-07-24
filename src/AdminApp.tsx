@@ -11,9 +11,8 @@ import { formatDate, formatDateTime } from './lib/date'
 import { addHairstyle, findClientName, loadSalonData, markMessageRead, saveSalonData, uid, upsertAppointment, upsertClient } from './lib/storage'
 import type { ClientNotification, PortalData } from './portalTypes'
 import { loadPortalData, savePortalData } from './lib/portalStorage'
-import { createClientInvitation } from './lib/demoAuth'
-import { localDemoClientCredentialProvider } from './lib/clientCredentialProvider'
 import { replaceAppointmentReminders } from './lib/reminders'
+import { supabase } from './lib/supabase'
 import './Portal.css'
 import './AdminPortal.css'
 
@@ -98,6 +97,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [temporaryPinConfirm, setTemporaryPinConfirm] = useState('')
   const [pinError, setPinError] = useState('')
   const [issuedTemporaryPin, setIssuedTemporaryPin] = useState<{ clientId: string; pin: string } | null>(null)
+  const [portalStatuses, setPortalStatuses] = useState<Record<string, { activated: boolean; temporary: boolean }>>({})
   const clientSavingRef = useRef(false)
   const imageFiles = useRef<{ before?: File; after?: File }>({})
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) { setNotice(message); window.setTimeout(() => setNotice(''), 2600) } }
@@ -107,12 +107,46 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
   function updatePortal(next: PortalData) { setPortal(next); savePortalData(next) }
 
-  async function makeInvitation(clientId: string) {
-    const { token, invitation } = await createClientInvitation(clientId)
-    updatePortal({ ...portal, invitations: [invitation, ...portal.invitations] })
-    const link = `${window.location.href.split('#')[0]}#/client/invite/${token}`
+  useEffect(() => {
+    async function loadSupabaseClients() {
+      if (!supabase) return
+      const [{ data: clients, error }, { data: statuses }] = await Promise.all([
+        supabase.from('clients').select('id,first_name,last_name,phone,notes,created_at,updated_at').order('first_name'),
+        supabase.rpc('admin_client_portal_status'),
+      ])
+      if (error) { setNotice('Supabase klijente nije moguće učitati.'); return }
+      const mapped: Client[] = (clients ?? []).map(item => ({
+        id: item.id,
+        firstName: item.first_name,
+        lastName: item.last_name,
+        phone: item.phone,
+        note: item.notes ?? '',
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+      }))
+      setData(current => ({ ...current, clients: mapped }))
+      const nextStatuses: Record<string, { activated: boolean; temporary: boolean }> = {}
+      for (const item of statuses ?? []) nextStatuses[item.client_id] = { activated: item.portal_activated, temporary: item.pin_is_temporary }
+      setPortalStatuses(nextStatuses)
+    }
+    void loadSupabaseClients()
+  }, [])
+
+  async function sendPortalAccess(clientId: string) {
+    if (!supabase) { setNotice('Supabase nije konfiguriran.'); return }
+    const { data: token, error } = await supabase.rpc('admin_create_client_access', { target_client_id: clientId })
+    if (error || !token) { setNotice('Adresu pristupa nije moguće izraditi.'); return }
+    const link = `${window.location.href.split('#')[0]}#/client/access/${token}`
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Frizerski salon Kristina', text: 'Vaš pristup klijentskom portalu', url: link })
+        setNotice('Pristup je podijeljen.')
+        return
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+      }
+    }
     setInviteLink(link)
-    try { await navigator.clipboard.writeText(link); setNotice('Osobna pozivnica je izrađena i kopirana.') } catch { setNotice('Osobna pozivnica je izrađena.') }
   }
 
   function openTemporaryPin(clientId: string) {
@@ -133,11 +167,13 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       setPinError('Uneseni PIN-ovi nisu jednaki.')
       return
     }
-    const credential = await localDemoClientCredentialProvider.setTemporaryPin(pinClientId, temporaryPin)
-    updatePortal({
-      ...portal,
-      credentials: [...portal.credentials.filter(item => item.clientId !== pinClientId), credential],
+    if (!supabase) return
+    const { error } = await supabase.rpc('admin_set_client_temporary_pin', {
+      target_client_id: pinClientId,
+      temporary_pin: temporaryPin,
     })
+    if (error) { setPinError('Privremeni PIN nije bilo moguće spremiti.'); return }
+    setPortalStatuses(current => ({ ...current, [pinClientId]: { activated: true, temporary: true } }))
     setIssuedTemporaryPin({ clientId: pinClientId, pin: temporaryPin })
     setPinClientId('')
     setTemporaryPin('')
@@ -148,9 +184,25 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     e.preventDefault(); if (!clientForm || clientSavingRef.current) return
     clientSavingRef.current=true;setIsSavingClient(true);setNotice('Spremanje klijenta…')
     try {
-      await Promise.resolve()
       const now = new Date().toISOString()
-      const client = { ...clientForm, id: clientForm.id || uid('client'), firstName: clientForm.firstName.trim(), lastName: clientForm.lastName.trim(), phone: clientForm.phone.trim(), createdAt: clientForm.createdAt || now, updatedAt: now }
+      let savedId = clientForm.id
+      if (supabase) {
+        const values = {
+          first_name: clientForm.firstName.trim(),
+          last_name: clientForm.lastName.trim(),
+          phone: clientForm.phone.trim(),
+          notes: clientForm.note.trim() || null,
+        }
+        const result = clientForm.id
+          ? await supabase.from('clients').update(values).eq('id', clientForm.id).select('id').single()
+          : await supabase.from('clients').insert(values).select('id').single()
+        if (result.error || !result.data) {
+          setNotice('Klijenta nije moguće spremiti u Supabase.')
+          return
+        }
+        savedId = result.data.id
+      }
+      const client = { ...clientForm, id: savedId || uid('client'), firstName: clientForm.firstName.trim(), lastName: clientForm.lastName.trim(), phone: clientForm.phone.trim(), createdAt: clientForm.createdAt || now, updatedAt: now }
       update({ ...data, clients: upsertClient(data.clients, client) }, 'Kartoteka i privatna fotografija su spremljene lokalno.'); setClientForm(null)
     } finally {
       clientSavingRef.current=false;setIsSavingClient(false)
@@ -211,14 +263,14 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         <div className="stats"><article><span>◷</span><div><strong>{upcoming.length}</strong><small>Aktivnih termina</small></div></article><article><span>♡</span><div><strong>{data.clients.length}</strong><small>Klijenata u kartoteci</small></div></article><article><span>✉</span><div><strong>{data.messages.filter(m => !m.read).length}</strong><small>Nepročitanih poruka</small></div></article><article><span>▧</span><div><strong>{data.hairstyles.length}</strong><small>Frizura u arhivi</small></div></article></div>
         <section className="panel"><div className="panel-head"><div><p className="eyebrow">RASPORED</p><h2>Nadolazeći termini</h2></div><button className="link" onClick={() => setView('termini')}>Prikaži sve →</button></div><div className="appointment-list">{upcoming.slice(0,4).map(item => <button className="appointment-row" key={item.id} onClick={() => { setAppointmentForm(item); setView('termini') }}><time>{new Date(item.dateTime).toLocaleTimeString('hr-HR',{hour:'2-digit',minute:'2-digit'})}</time><div><strong>{findClientName(data.clients,item.clientId)}</strong><small>{item.service}</small></div><span>{formatDateTime(item.dateTime).split(',')[0]}</span></button>)}</div></section></>}
       {view === 'klijenti' && <section className="panel"><div className="panel-head stack-mobile"><div><p className="eyebrow">KARTOTEKA</p><h2>Moji klijenti</h2></div><div className="toolbar"><input aria-label="Pretraži klijente" placeholder="Pretraži ime ili telefon…" value={query} onChange={e => setQuery(e.target.value)} /><button className="primary" onClick={() => setClientForm(emptyClient())}>+ Novi klijent</button></div></div>
-        <div className="client-grid">{filteredClients.map(client => { const portalActive = portal.credentials.some(item => item.clientId === client.id && item.pinHash && item.pinSalt); return <article className="client-card" key={client.id}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.firstName} {client.lastName}</h3><a href={`tel:${client.phone}`}>{client.phone}</a><p>{client.note || 'Nema zabilješke.'}</p><section className="client-portal-access"><strong>Pristup klijentskom portalu</strong><span className={portalActive ? 'portal-active' : 'portal-inactive'}>{portalActive ? 'Portal aktiviran' : 'Portal nije aktiviran'}</span>{portalActive ? <button className="invite-action" onClick={() => openTemporaryPin(client.id)}>Postavi novi privremeni PIN</button> : <button className="invite-action" onClick={() => void makeInvitation(client.id)}>Izradi pozivnicu</button>}</section></div><button className="more" onClick={() => setClientForm(client)}>Uredi</button></article> })}</div></section>}
+        <div className="client-grid">{filteredClients.map(client => { const portalActive = portalStatuses[client.id]?.activated === true; return <article className="client-card" key={client.id}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.firstName} {client.lastName}</h3><a href={`tel:${client.phone}`}>{client.phone}</a><p>{client.note || 'Nema zabilješke.'}</p><section className="client-portal-access"><strong>Pristup klijentskom portalu</strong><span className={portalActive ? 'portal-active' : 'portal-inactive'}>{portalActive ? `Portal aktiviran${portalStatuses[client.id]?.temporary ? ' · promjena PIN-a obavezna' : ''}` : 'Portal nije aktiviran'}</span>{portalActive ? <button className="invite-action" onClick={() => openTemporaryPin(client.id)}>Postavi novi privremeni PIN</button> : <button className="invite-action" onClick={() => void sendPortalAccess(client.id)}>Pošalji pristup</button>}</section></div><button className="more" onClick={() => setClientForm(client)}>Uredi</button></article> })}</div></section>}
       {view === 'termini' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">KRISTININ RASPORED</p><h2>Termini</h2></div><button className="primary" onClick={() => setAppointmentForm(emptyAppointment(data.appointments))}>+ Novi termin</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{[...data.appointments].sort((a,b) => a.dateTime.localeCompare(b.dateTime)).map(item => <tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.status}`}>{item.status === 'zakazan' ? 'Potvrđeno' : 'Otkazano'}</span></td><td><button className="link" onClick={() => setAppointmentForm(item)}>Uredi</button><button className="link" onClick={() => sendAppointmentMessage(item)}>Poruka</button></td></tr>)}</tbody></table></div></section>}
       {view === 'zahtjevi' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">KLIJENTSKI PORTAL</p><h2>Zahtjevi klijenata</h2></div><span className="request-count">{openRequests.length} otvorenih</span></div><div className="request-inbox">{portal.requests.length ? portal.requests.map(request => <article key={request.id} className={`request-card ${request.status}`}><div className="request-card-head"><div><strong>{findClientName(data.clients,request.clientId)}</strong><small>{formatDateTime(request.createdAt)}</small></div><span>{request.status.replace('_',' ')}</span></div><p><b>{request.kind === 'termin' ? request.service : request.kind === 'promjena' ? 'Zahtjev za promjenu' : 'Zahtjev za otkazivanje'}</b></p>{request.preferredDates.length > 0 && <p>Poželjni dani: {request.preferredDates.map(formatDate).join(', ')} · {request.dayPeriod}</p>}<p>{request.message || 'Bez dodatne poruke.'}</p>{request.adminReply && <p className="admin-reply">Odgovor: {request.adminReply}</p>}<div className="request-actions">{request.kind === 'termin' && request.status !== 'potvrđeno' && <button className="primary" onClick={() => createAppointmentFromRequest(request.id)}>Izradi termin</button>}<button className="secondary" onClick={() => replyToRequest(request.id,'u_razgovoru')}>Odgovori / drugi prijedlog</button><button className="danger-action" onClick={() => replyToRequest(request.id,'odbijeno')}>Odbij</button></div></article>) : <p className="empty-state">Još nema zahtjeva iz klijentskog portala.</p>}</div></section>}
       {view === 'poruke' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INBOX</p><h2>Poruke klijenata</h2></div></div><div className="message-list">{[...data.messages].sort((a,b) => b.createdAt.localeCompare(a.createdAt)).map(message => <button key={message.id} className={`message ${message.read?'':'unread'}`} onClick={() => update({...data,messages:markMessageRead(data.messages,message.id)})}><span className="avatar">{message.senderName.split(' ').map(x=>x[0]).join('').slice(0,2)}</span><div><div><strong>{message.senderName}</strong><time>{formatDateTime(message.createdAt)}</time></div><p>{message.text}</p><small>{message.senderPhone}</small></div></button>)}</div></section>}
       {view === 'arhiva' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INSPIRACIJA I POVIJEST</p><h2>Arhiva frizura</h2></div><button className="primary" onClick={() => setArchiveOpen(true)}>+ Dodaj frizuru</button></div><div className="gallery">{data.hairstyles.map(entry => <article key={entry.id}><div className="photo-pair"><figure><img src={entry.before.thumb} alt="Prije" /><figcaption>Prije</figcaption></figure>{entry.after&&<figure><img src={entry.after.thumb} alt="Poslije" /><figcaption>Poslije</figcaption></figure>}</div><div><small>{formatDate(entry.date)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.note}</p><button className="link" onClick={() => update({...data,hairstyles:data.hairstyles.map(item => item.id === entry.id ? {...item,visibleToClient:!item.visibleToClient}:item)},entry.visibleToClient?'Fotografija više nije vidljiva klijentu.':'Fotografija je vidljiva klijentu.')}>{entry.visibleToClient?'Sakrij od klijenta':'Podijeli s klijentom'}</button></div></article>)}</div></section>}
     </main>
     <div className="mobile-nav">{nav.map(item => <button key={item.id} className={view===item.id?'active':''} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</div>{notice&&<div className="toast">{notice}</div>}
-    {inviteLink&&<Modal title="Osobna pozivnica" onClose={() => setInviteLink('')}><div className="invite-modal"><p>Link vrijedi 24 sata i može se iskoristiti samo jednom.</p><textarea readOnly rows={4} value={inviteLink}/><button className="primary" onClick={() => void navigator.clipboard.writeText(inviteLink)}>Kopiraj link</button></div></Modal>}
+    {inviteLink&&<Modal title="Pošalji pristup" onClose={() => setInviteLink('')}><div className="invite-modal"><p>Ovaj uređaj nema izvorni izbornik za dijeljenje. Kopirajte adresu i pošaljite je klijentu.</p><textarea readOnly rows={4} value={inviteLink}/><button className="primary" onClick={() => void navigator.clipboard.writeText(inviteLink)}>Kopiraj adresu</button></div></Modal>}
     {pinClientId&&<Modal title="Novi privremeni PIN" onClose={() => setPinClientId('')}><form onSubmit={event => void saveTemporaryPin(event)}><p className="pin-guidance">Postavite novi četveroznamenkasti PIN. Prethodni PIN odmah će prestati vrijediti.</p><label>Novi PIN<input required type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} value={temporaryPin} onChange={event => setTemporaryPin(event.target.value.replace(/\D/g, '').slice(0, 4))}/></label><label>Potvrdite PIN<input required type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} value={temporaryPinConfirm} onChange={event => setTemporaryPinConfirm(event.target.value.replace(/\D/g, '').slice(0, 4))}/></label>{pinError&&<p className="form-error" role="alert">{pinError}</p>}<FormActions disabled={temporaryPin.length !== 4 || temporaryPinConfirm.length !== 4} onCancel={() => setPinClientId('')}/></form></Modal>}
     {issuedTemporaryPin&&<Modal title="Privremeni PIN je postavljen" onClose={() => setIssuedTemporaryPin(null)}><div className="issued-pin"><p>Novi privremeni PIN prikazuje se samo sada:</p><output aria-label="Novi privremeni PIN">{issuedTemporaryPin.pin}</output><button className="primary" type="button" onClick={() => void navigator.clipboard.writeText(issuedTemporaryPin.pin)}>Kopiraj PIN</button><p className="pin-warning" role="alert">Pošaljite ovaj PIN klijentu sigurnim putem. Nakon zatvaranja više ga nećete moći vidjeti.</p></div></Modal>}
     {clientForm&&<Modal title={clientForm.id?'Uredi kartoteku':'Novi klijent'} onClose={() => setClientForm(null)}><form onSubmit={saveClient}><div className="form-grid"><label>Ime<input required value={clientForm.firstName} onChange={e=>setClientForm({...clientForm,firstName:e.target.value})}/></label><label>Prezime<input required value={clientForm.lastName} onChange={e=>setClientForm({...clientForm,lastName:e.target.value})}/></label></div><label>Telefon<input required type="tel" inputMode="tel" autoComplete="tel" value={clientForm.phone} onChange={e=>setClientForm({...clientForm,phone:e.target.value})}/></label><div className="form-field"><span>Profilna fotografija</span><ClientPhotoInput value={clientForm.photo} onChange={photo=>setClientForm({...clientForm,photo})}/></div><label>Bilješka<textarea rows={4} value={clientForm.note} onChange={e=>setClientForm({...clientForm,note:e.target.value})}/></label><FormActions disabled={isSavingClient} submitting={isSavingClient} onCancel={()=>setClientForm(null)}/></form></Modal>}
