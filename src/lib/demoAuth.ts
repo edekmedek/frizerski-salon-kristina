@@ -45,6 +45,10 @@ export function phoneMatches(client: Client, phone: string) {
   return normalize(client.phone) === normalize(phone)
 }
 
+export function isValidTemporaryPin(pin: string) {
+  return /^\d{4}$/.test(pin)
+}
+
 export async function createPinCredential(
   clientId: string,
   pin: string,
