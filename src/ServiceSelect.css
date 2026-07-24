@@ -1,0 +1,30 @@
+.service-select {
+  position: relative;
+  display: block;
+}
+
+.service-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 42px;
+  cursor: pointer;
+}
+
+.service-select > span {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--terracotta);
+  font-size: 17px;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateY(-55%);
+}
+
+.primary:disabled {
+  color: #f8f5f2;
+  background: #a8a09c;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+}

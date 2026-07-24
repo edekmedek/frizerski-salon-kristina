@@ -1,0 +1,140 @@
+.client-photo-input {
+  display: grid;
+  gap: 11px;
+}
+
+.photo-preview {
+  width: 112px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  border: 1px solid #ddc6b9;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ead6ca, #f8eee8);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.photo-action {
+  width: min(100%, 240px);
+  min-height: 46px;
+  display: grid !important;
+  place-items: center;
+  padding: 8px 10px;
+  border: 1px solid #d8b8a7;
+  border-radius: 9px;
+  background: #f8ebe4;
+  color: var(--wine) !important;
+  text-align: center;
+  cursor: pointer;
+}
+
+.gallery-file-input {
+  position: absolute;
+  width: 1px !important;
+  height: 1px !important;
+  min-height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.photo-action input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.photo-dropzone {
+  min-height: 60px;
+  padding: 10px;
+  border: 1px dashed #cfa890;
+  border-radius: 9px;
+  background: #fffaf6;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.photo-dropzone.dragging {
+  border-color: var(--terracotta);
+  background: #f7e3d8;
+  color: var(--wine);
+}
+
+.dropzone-touch {
+  display: none;
+}
+
+.photo-change-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.photo-change-actions button {
+  min-width: 88px;
+  min-height: 44px;
+  border-radius: 8px;
+  background: #f0e7e1;
+  color: var(--ink);
+}
+
+.photo-change-actions .remove-photo {
+  color: #914a40;
+  background: #f7e7e3;
+}
+
+.photo-status,
+.photo-error,
+.photo-help {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.photo-status {
+  color: #5c7658;
+}
+
+.photo-error {
+  color: #9a443a;
+}
+
+.photo-help {
+  color: var(--muted);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .photo-dropzone {
+    min-height: 48px;
+    border-style: solid;
+  }
+
+  .dropzone-desktop {
+    display: none;
+  }
+
+  .dropzone-touch {
+    display: inline;
+  }
+}
+
+@media (max-width: 350px) {
+  .photo-action {
+    width: 100%;
+  }
+}
