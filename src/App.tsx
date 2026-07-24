@@ -4,8 +4,11 @@ import { ClientPortal } from './ClientPortal'
 import { AccessScreen } from './AccessScreen'
 import type { PortalSession } from './portalTypes'
 import { getPortalSession, setPortalSession } from './lib/portalStorage'
+import { useKeyboardViewport } from './lib/useKeyboardViewport'
+import './KeyboardViewport.css'
 
 function App() {
+  useKeyboardViewport()
   const [session, setSession] = useState<PortalSession | null>(() => getPortalSession())
 
   useEffect(() => {

@@ -130,7 +130,7 @@ export function AccessScreen() {
         {mode === 'client' && <form onSubmit={(event) => void loginClient(event)}>
           <h1>Ulaz za klijente</h1>
           <p>Prva prijava moguća je samo osobnim pozivnim linkom salona.</p>
-          <label>Broj mobitela<input type="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+          <label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
           <label>PIN<input type="password" inputMode="numeric" autoComplete="current-password" required value={pin} onChange={(event) => setPin(event.target.value)} /></label>
           {message && <p className="form-message" role="alert">{message}</p>}
           <button className="primary" type="submit">Prijavi se</button>
@@ -141,7 +141,7 @@ export function AccessScreen() {
           {inviteStage === 'phone' && <form onSubmit={(event) => void beginInvite(event)}>
             <h1>Aktivirajte svoj pristup</h1>
             <p>Unesite broj mobitela povezan s osobnom pozivnicom.</p>
-            <label>Broj mobitela<input type="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+            <label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
             {message && <p className="form-message" role="alert">{message}</p>}
             <button className="primary" type="submit">Nastavi</button>
           </form>}

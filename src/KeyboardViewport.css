@@ -1,0 +1,57 @@
+:root {
+  --visual-viewport-height: 100dvh;
+  --visual-viewport-offset-top: 0px;
+}
+
+input,
+select,
+textarea {
+  scroll-margin-block: 90px;
+}
+
+@media (max-width: 700px) {
+  .modal-backdrop,
+  .portal-modal-backdrop {
+    top: var(--visual-viewport-offset-top);
+    bottom: auto;
+    height: var(--visual-viewport-height);
+    max-height: var(--visual-viewport-height);
+    overflow-y: auto;
+  }
+
+  .modal,
+  .portal-modal {
+    max-height: calc(var(--visual-viewport-height) - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .access-page {
+    min-height: var(--visual-viewport-height);
+    height: var(--visual-viewport-height);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .keyboard-visible .access-page {
+    place-items: start center;
+  }
+
+  .keyboard-visible .access-card {
+    margin-block: 8px max(16px, env(safe-area-inset-bottom));
+  }
+
+  .keyboard-visible .modal-backdrop,
+  .keyboard-visible .portal-modal-backdrop {
+    align-items: start;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
