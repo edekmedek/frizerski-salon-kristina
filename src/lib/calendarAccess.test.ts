@@ -1,33 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { calendarDateAfterMove, canOpenCalendarDate, isPastCalendarDate } from './calendarAccess'
+import { calendarDateAfterMove, canOpenMainCalendarDate, isArchivedAppointment, isPastCalendarDate } from './calendarAccess'
 
 describe('zaštita prošlih datuma kalendara', () => {
   const today = '2026-07-25'
 
-  it('zabranjuje prošlost dok PIN nije potvrđen', () => {
-    expect(canOpenCalendarDate('2026-07-24', today, false)).toBe(false)
+  it('glavni kalendar uvijek zabranjuje prošlost', () => {
+    expect(canOpenMainCalendarDate('2026-07-24', today)).toBe(false)
     expect(isPastCalendarDate('2026-07-24', today)).toBe(true)
   })
 
-  it('pogrešan PIN ne mijenja zaključano stanje', () => {
-    const verified = false
-    expect(canOpenCalendarDate('2026-07-24', today, verified)).toBe(false)
+  it('ručni odabir dopušta samo danas i budućnost', () => {
+    expect(canOpenMainCalendarDate('2025-12-31', today)).toBe(false)
+    expect(canOpenMainCalendarDate('2026-07-25', today)).toBe(true)
+    expect(canOpenMainCalendarDate('2026-07-26', today)).toBe(true)
   })
 
-  it('ispravan PIN dopušta prošlost samo uz memorijsko otključavanje', () => {
-    const verified = true
-    expect(canOpenCalendarDate('2026-07-24', today, verified)).toBe(true)
-  })
-
-  it('ručni odabir prošlog datuma podliježe istoj provjeri', () => {
-    expect(canOpenCalendarDate('2025-12-31', today, false)).toBe(false)
-    expect(canOpenCalendarDate('2026-07-25', today, false)).toBe(true)
-    expect(canOpenCalendarDate('2026-07-26', today, false)).toBe(true)
-  })
-
-  it('izračun prethodnog dana ne preskače zaštitnu odluku', () => {
+  it('prethodni dan ne može zaobići ograničenje glavnog kalendara', () => {
     const target = calendarDateAfterMove(today, -1)
     expect(target).toBe('2026-07-24')
-    expect(canOpenCalendarDate(target, today, false)).toBe(false)
+    expect(canOpenMainCalendarDate(target, today)).toBe(false)
+  })
+
+  it('odvaja prošle termine od nezaštićenog popisa', () => {
+    expect(isArchivedAppointment('2026-07-24T15:00', today)).toBe(true)
+    expect(isArchivedAppointment('2026-07-25T08:00', today)).toBe(false)
   })
 })

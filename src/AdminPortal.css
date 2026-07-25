@@ -332,24 +332,6 @@
   font-size: 24px;
 }
 
-.past-access {
-  width: 44px;
-  min-width: 44px;
-  padding: 7px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: transparent;
-  color: #a99a93;
-  font-size: 14px;
-}
-
-.past-access:hover,
-.past-access:focus-visible {
-  border-color: var(--line);
-  background: #f7f1ed;
-  color: var(--wine);
-}
-
 .today-button {
   padding: 8px 13px;
 }
@@ -492,6 +474,41 @@
   line-height: 1.55;
 }
 
+.settings-list {
+  display: grid;
+}
+
+.settings-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 74px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-list p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.badge.no-charge {
+  background: #eee7d9;
+  color: #715d36;
+  white-space: normal;
+}
+
+.calendar-event.no-charge {
+  border-left-color: #9a7c42;
+  background: #f4eddf;
+}
+
+.no-charge-hint {
+  margin-top: -10px;
+}
+
 .admin-pin-form input {
   min-height: 44px;
   font-size: 16px;
@@ -541,14 +558,15 @@
   }
 
   .schedule-navigation {
-    display: grid;
-    grid-template-columns: 44px minmax(62px, auto) 44px minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     width: 100%;
   }
 
   .schedule-navigation input {
-    width: 100%;
+    width: min(160px, 100%);
     min-width: 0;
+    flex: 1 1 132px;
   }
 
   .calendar-scroll {
@@ -593,11 +611,7 @@
 }
 
 @media (max-width: 360px) {
-  .schedule-navigation {
-    grid-template-columns: 44px 1fr 44px;
-  }
-
   .schedule-navigation input {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
   }
 }

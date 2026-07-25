@@ -26,6 +26,7 @@ export interface Appointment {
   serviceCategoryId?: string
   servicePrice?: number
   serviceDuration?: number
+  noCharge?: boolean
   status: AppointmentStatus
   note: string
   assignedBy: 'Kristina'

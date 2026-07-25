@@ -2,8 +2,12 @@ export function isPastCalendarDate(date: string, today: string) {
   return date < today
 }
 
-export function canOpenCalendarDate(date: string, today: string, pastUnlocked: boolean) {
-  return !isPastCalendarDate(date, today) || pastUnlocked
+export function canOpenMainCalendarDate(date: string, today: string) {
+  return !isPastCalendarDate(date, today)
+}
+
+export function isArchivedAppointment(dateTime: string, today: string) {
+  return isPastCalendarDate(dateTime.slice(0, 10), today)
 }
 
 export function calendarDateAfterMove(currentDate: string, offset: number) {
