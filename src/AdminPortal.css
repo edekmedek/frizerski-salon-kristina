@@ -163,8 +163,16 @@
   min-height: 22px;
 }
 
+.price-category-table {
+  margin-bottom: 28px;
+}
+
+.price-category-table table {
+  min-width: 520px;
+}
+
 .mobile-nav {
-  grid-template-columns: repeat(6, 1fr) !important;
+  grid-template-columns: repeat(7, 1fr) !important;
 }
 
 @media (max-width: 700px) {

@@ -28,6 +28,8 @@ service-account*.json
 !.vscode/extensions.json
 .idea
 .DS_Store
+~$*.xlsx
+supabase/.temp/
 *.suo
 *.ntvs*
 *.njsproj

@@ -22,6 +22,10 @@ export interface Appointment {
   clientId: string
   dateTime: string
   service: string
+  serviceId?: string
+  serviceCategoryId?: string
+  servicePrice?: number
+  serviceDuration?: number
   status: AppointmentStatus
   note: string
   assignedBy: 'Kristina'
@@ -48,6 +52,27 @@ export interface HairstyleArchiveEntry {
   note: string
   createdAt: string
   visibleToClient?: boolean
+}
+
+export interface Service {
+  id: string
+  sourceCode?: number
+  name: string
+  categoryId: string
+  categoryName: string
+  price: number
+  durationMinutes?: number
+  isActive: boolean
+  isBookable: boolean
+  displayOrder: number
+}
+
+export interface ServiceCategory {
+  id: string
+  code?: string
+  name: string
+  isActive: boolean
+  displayOrder: number
 }
 
 export interface SalonData {
