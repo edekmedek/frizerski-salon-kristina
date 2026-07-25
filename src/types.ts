@@ -27,6 +27,8 @@ export interface Appointment {
   servicePrice?: number
   serviceDuration?: number
   treatments?: AppointmentTreatment[]
+  priceWasManuallyAdjusted?: boolean
+  priceBeforeNoCharge?: number
   noCharge?: boolean
   status: AppointmentStatus
   note: string

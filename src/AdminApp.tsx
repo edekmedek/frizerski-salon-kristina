@@ -17,7 +17,7 @@ import { appointmentServices, appointmentStatusLabel, orderedCategories, ordered
 import { calendarEventLayout, calendarTimeMarks, calendarWorkingHours, calendarWorkingHoursLabel, timeFromCalendarPosition } from './lib/dayCalendar'
 import { calendarDateAfterMove, canOpenMainCalendarDate, isArchivedAppointment } from './lib/calendarAccess'
 import { createEmptyAdminPinFields, isValidAdminPin, isValidCurrentAdminPin } from './lib/adminPin'
-import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, removeTreatmentPreservingOverrides } from './lib/appointmentTreatments'
+import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, normalizeAppointmentTreatmentTotals, removeTreatmentPreservingOverrides, treatmentTotals } from './lib/appointmentTreatments'
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
 import { supabase } from './lib/supabase'
 import './Portal.css'
@@ -126,6 +126,49 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(supabase ? 'synced' : 'local')
   const clientSavingRef = useRef(false)
   const imageFiles = useRef<{ before?: File; after?: File }>({})
+  const previousNoChargeRef = useRef(false)
+  const priceBeforeNoChargeRef = useRef<{ appointmentId: string; price: number; manual: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!appointmentForm) {
+      previousNoChargeRef.current = false
+      priceBeforeNoChargeRef.current = null
+      return
+    }
+
+    const totals = treatmentTotals(appointmentForm.treatments ?? [])
+    if (appointmentForm.noCharge) {
+      previousNoChargeRef.current = true
+      return
+    }
+
+    if (previousNoChargeRef.current) {
+      const saved = priceBeforeNoChargeRef.current
+      const restoredPrice = saved?.appointmentId === appointmentForm.id && saved.manual
+        ? saved.price
+        : totals.price
+      previousNoChargeRef.current = false
+      priceBeforeNoChargeRef.current = null
+      if (appointmentForm.servicePrice !== restoredPrice) {
+        setAppointmentForm({ ...appointmentForm, servicePrice: restoredPrice, priceWasManuallyAdjusted: saved?.manual === true })
+        return
+      }
+    }
+
+    const normalized = normalizeAppointmentTreatmentTotals(appointmentForm)
+    if (normalized.servicePrice !== appointmentForm.servicePrice
+      || normalized.serviceDuration !== appointmentForm.serviceDuration
+      || normalized.priceWasManuallyAdjusted !== appointmentForm.priceWasManuallyAdjusted) {
+      setAppointmentForm(normalized)
+      return
+    }
+
+    priceBeforeNoChargeRef.current = {
+      appointmentId: appointmentForm.id,
+      price: appointmentForm.servicePrice ?? totals.price,
+      manual: appointmentForm.priceWasManuallyAdjusted === true,
+    }
+  }, [appointmentForm])
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) { setNotice(message); window.setTimeout(() => setNotice(''), 2600) } }
   function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
   const filteredClients = useMemo(() => { const term = query.trim().toLocaleLowerCase('hr'); return term ? data.clients.filter(c => `${c.firstName} ${c.lastName} ${c.phone}`.toLocaleLowerCase('hr').includes(term)) : data.clients }, [data.clients, query])
@@ -267,7 +310,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           price: Number(row.service_price_snapshot),
           durationMinutes: row.service_duration_snapshot ?? undefined,
         }))
-        return {
+        return normalizeAppointmentTreatmentTotals({
         id: item.id,
         clientId: item.client_id,
         dateTime: localDateTimeValue(item.starts_at),
@@ -287,7 +330,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         assignedBy: 'Kristina',
         createdAt: item.created_at,
         updatedAt: item.updated_at,
-      }})
+      })})
       setData(current => ({ ...current, clients: mapped, appointments: mappedAppointments }))
       setServiceCatalog((services ?? []).map((item: {
         id: string
