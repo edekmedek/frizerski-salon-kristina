@@ -509,9 +509,65 @@
   margin-top: -10px;
 }
 
-.admin-pin-form input {
+.admin-pin-fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.admin-pin-fieldset legend {
+  margin-bottom: 7px;
+  color: #6c5b54;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-pin-digits {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 9px;
+}
+
+.admin-pin-digit {
+  position: relative;
+  width: 48px;
+  height: 50px;
+  flex: 0 1 48px;
+}
+
+.admin-pin-digit input {
+  width: 100%;
+  height: 100%;
   min-height: 44px;
-  font-size: 16px;
+  padding: 0;
+  color: transparent;
+  caret-color: transparent;
+  text-align: center;
+  font-size: 18px;
+}
+
+.admin-pin-digit i {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--ink);
+  font-style: normal;
+  font-size: 23px;
+}
+
+.admin-pin-digit:focus-within input {
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 3px #b76f5216;
+}
+
+.pin-format-hint {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 @media (max-width: 700px) {
@@ -567,6 +623,24 @@
     width: min(160px, 100%);
     min-width: 0;
     flex: 1 1 132px;
+  }
+
+  .admin-pin-digits {
+    gap: 7px;
+  }
+
+  .admin-pin-digit {
+    width: 44px;
+    flex-basis: 44px;
+  }
+
+  .admin-pin-digits.slots-6 {
+    gap: 5px;
+  }
+
+  .admin-pin-digits.slots-6 .admin-pin-digit {
+    width: min(44px, calc((100vw - 78px) / 6));
+    flex-basis: min(44px, calc((100vw - 78px) / 6));
   }
 
   .calendar-scroll {
