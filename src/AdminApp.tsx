@@ -6,6 +6,7 @@ import './ServiceSelect.css'
 import './Mobile.css'
 import { ClientPhotoInput } from './ClientPhotoInput'
 import { AdminPinInput } from './AdminPinInput'
+import { AdminMessageInbox, AdminRequestInbox } from './AdminInboxViews'
 import type { Appointment, Client, HairstyleArchiveEntry, SalonData, Service, ServiceCategory } from './types'
 import { compressImageToAsset } from './lib/image'
 import { formatDate, formatDateTime } from './lib/date'
@@ -19,16 +20,17 @@ import { calendarDateAfterMove, canOpenMainCalendarDate, isArchivedAppointment }
 import { createEmptyAdminPinFields, isValidAdminPin, isValidCurrentAdminPin } from './lib/adminPin'
 import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, normalizeAppointmentTreatmentTotals, removeTreatmentPreservingOverrides, treatmentTotals } from './lib/appointmentTreatments'
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
+import { adminInboxCounts, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
 import { supabase } from './lib/supabase'
 import './Portal.css'
 import './AdminPortal.css'
 
-type View = 'pregled' | 'klijenti' | 'cjenik' | 'zahtjevi' | 'poruke' | 'arhiva' | 'postavke' | 'arhiva-termina'
+type View = 'pregled' | 'klijenti' | 'cjenik' | 'zahtjevi' | 'poruke' | 'zahtjevi-live' | 'poruke-live' | 'arhiva' | 'postavke' | 'arhiva-termina'
 const currentUserRole: 'administrator' | 'client' = 'administrator'
 const nav: { id: View; label: string; icon: string }[] = [
   { id: 'pregled', label: 'Raspored', icon: '⌂' }, { id: 'klijenti', label: 'Klijenti', icon: '♡' },
-  { id: 'zahtjevi', label: 'Zahtjevi', icon: '◇' },
-  { id: 'cjenik', label: 'Cjenik', icon: '€' }, { id: 'poruke', label: 'Poruke', icon: '✉' }, { id: 'arhiva', label: 'Arhiva', icon: '▧' },
+  { id: 'zahtjevi-live', label: 'Zahtjevi', icon: '◇' },
+  { id: 'cjenik', label: 'Cjenik', icon: '€' }, { id: 'poruke-live', label: 'Poruke', icon: '✉' }, { id: 'arhiva', label: 'Arhiva', icon: '▧' },
   { id: 'postavke', label: 'Postavke', icon: '⚙' },
 ]
 const emptyClient = (): Client => ({ id: '', firstName: '', lastName: '', phone: '', note: '', createdAt: '', updatedAt: '' })
@@ -124,6 +126,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [adminPinError, setAdminPinError] = useState('')
   const [adminPinBusy, setAdminPinBusy] = useState(false)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(supabase ? 'synced' : 'local')
+  const [adminRequests, setAdminRequests] = useState<AdminRequest[]>([])
+  const [adminMessages, setAdminMessages] = useState<AdminMessage[]>([])
+  const [selectedAdminRequest, setSelectedAdminRequest] = useState<AdminRequest>()
+  const [selectedAdminMessage, setSelectedAdminMessage] = useState<AdminMessage>()
+  const [showMessageArchive, setShowMessageArchive] = useState(false)
+  const [inboxBusy, setInboxBusy] = useState(false)
   const clientSavingRef = useRef(false)
   const imageFiles = useRef<{ before?: File; after?: File }>({})
   const previousNoChargeRef = useRef(false)
@@ -279,6 +287,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     if ((event.target as HTMLElement).closest('.calendar-event')) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const time = timeFromCalendarPosition(event.clientY - bounds.top, bounds.height)
+    setSourceRequestId('')
     setAppointmentForm({ ...emptyAppointment(data.appointments), dateTime: `${selectedCalendarDate}T${time}` })
   }
 
@@ -366,6 +375,116 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     }
     void loadSupabaseClients()
   }, [])
+
+  async function loadAdminInbox() {
+    if (!supabase) return false
+    const [requestResult, messageResult] = await Promise.all([
+      supabase.rpc('admin_list_client_request_inbox'),
+      supabase.rpc('admin_list_messages', { include_archived: true }),
+    ])
+    if (requestResult.error || messageResult.error) {
+      setSyncStatus('error')
+      setNotice('Administratorski inbox nije moguće sinkronizirati.')
+      return false
+    }
+    setAdminRequests(mapAdminRequests(requestResult.data ?? []))
+    setAdminMessages(mapAdminMessages(messageResult.data ?? []))
+    return true
+  }
+
+  useEffect(() => {
+    async function load() {
+      await loadAdminInbox()
+    }
+    void load()
+  }, [])
+
+  async function openAdminRequest(request: AdminRequest) {
+    if (!supabase) return
+    setInboxBusy(true)
+    const { data: readAt, error } = await supabase.rpc('admin_open_client_request', { target_request_id: request.id })
+    setInboxBusy(false)
+    if (error || !readAt) { setNotice('Zahtjev nije moguće otvoriti.'); return }
+    const opened = { ...request, readAt }
+    setAdminRequests(current => current.map(item => item.id === request.id ? opened : item))
+    setSelectedAdminRequest(opened)
+  }
+
+  async function respondToAdminRequest(request: AdminRequest, status: 'in_review' | 'rejected', reply: string) {
+    if (!supabase) return false
+    setInboxBusy(true)
+    const { error } = await supabase.rpc('admin_respond_client_request', {
+      target_request_id: request.id,
+      next_status: status,
+      reply_message: reply,
+    })
+    setInboxBusy(false)
+    if (error) { setNotice('Odgovor na zahtjev nije spremljen.'); return false }
+    await loadAdminInbox()
+    setSelectedAdminRequest(undefined)
+    setNotice(status === 'rejected' ? 'Zahtjev je odbijen.' : 'Drugi prijedlog je poslan klijentu.')
+    return true
+  }
+
+  function acceptAdminRequest(request: AdminRequest) {
+    const selectedService = serviceCatalog.find(item => item.isActive && item.isBookable && item.name === request.service)
+    if (!selectedService) { setNotice('Tretman iz zahtjeva više nije dostupan u cjeniku.'); return }
+    const date = request.preferredDates[0] || localDateString(new Date())
+    const periodTimes = timeOptions.filter(time =>
+      request.dayPeriod === 'any'
+      || (request.dayPeriod === 'morning' ? time < '12:00' : time >= '12:00'))
+    const time = periodTimes.find(candidate => !isTimeUnavailable(date, candidate, selectedService.name, data.appointments)) ?? periodTimes[0] ?? '08:00'
+    const appointment = addTreatmentPreservingOverrides(emptyAppointment(data.appointments), selectedService)
+    setSourceRequestId(request.id)
+    setAppointmentForm({ ...appointment, clientId: request.clientId, dateTime: `${date}T${time}`, note: request.message })
+    setSelectedAdminRequest(undefined)
+  }
+
+  async function openAdminMessage(message: AdminMessage) {
+    if (!supabase) return
+    setInboxBusy(true)
+    const { data: readAt, error } = await supabase.rpc('admin_open_message', { target_message_id: message.id })
+    setInboxBusy(false)
+    if (error || !readAt) { setNotice('Poruku nije moguće otvoriti.'); return }
+    const opened = { ...message, read: true, readAt }
+    setAdminMessages(current => current.map(item => item.id === message.id ? opened : item))
+    setSelectedAdminMessage(opened)
+  }
+
+  async function replyToAdminMessage(message: AdminMessage, reply: string) {
+    if (!supabase) return false
+    setInboxBusy(true)
+    const { error } = await supabase.rpc('admin_reply_to_message', { target_message_id: message.id, reply_message: reply })
+    setInboxBusy(false)
+    if (error) { setNotice('Odgovor nije spremljen u Supabase.'); return false }
+    await loadAdminInbox()
+    setNotice('Odgovor je poslan klijentu.')
+    return true
+  }
+
+  async function archiveAdminMessage(message: AdminMessage) {
+    if (!supabase) return false
+    setInboxBusy(true)
+    const { error } = await supabase.rpc('admin_archive_message', { target_message_id: message.id })
+    setInboxBusy(false)
+    if (error) { setNotice('Poruku nije moguće arhivirati.'); return false }
+    await loadAdminInbox()
+    setSelectedAdminMessage(undefined)
+    setNotice('Poruka je arhivirana.')
+    return true
+  }
+
+  async function deleteAdminMessage(message: AdminMessage) {
+    if (!supabase || !window.confirm('Trajno obrisati ovu arhiviranu poruku? Ova se radnja ne može poništiti.')) return false
+    setInboxBusy(true)
+    const { error } = await supabase.rpc('admin_delete_archived_message', { target_message_id: message.id })
+    setInboxBusy(false)
+    if (error) { setNotice('Poruka nije obrisana iz Supabasea.'); return false }
+    await loadAdminInbox()
+    setSelectedAdminMessage(undefined)
+    setNotice('Arhivirana poruka je trajno obrisana.')
+    return true
+  }
 
   async function sendPortalAccess(clientId: string) {
     if (!supabase) { setNotice('Supabase nije konfiguriran.'); return }
@@ -457,19 +576,31 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     let savedId = appointmentForm.id
     if (supabase) {
       const startsAt = new Date(appointmentForm.dateTime).toISOString()
-      const result = await supabase.rpc('admin_save_appointment_with_services', {
-        target_appointment_id: appointmentForm.id || null,
-        target_client_id: appointmentForm.clientId,
+      const appointmentValues = {
         target_starts_at: startsAt,
-        target_status: appointmentForm.status === 'otkazan' ? 'cancelled' : appointmentForm.status === 'zavrsen' ? 'completed' : 'confirmed',
         target_notes: appointmentForm.note,
         target_no_charge: appointmentForm.noCharge === true,
         target_service_ids: appointmentForm.treatments.map(item => item.serviceId),
         target_total_duration: appointmentForm.serviceDuration || null,
         target_total_price: finalAppointmentPrice(appointmentForm),
-      })
+      }
+      const acceptingRequest = sourceRequestId && !appointmentForm.id
+      const result = acceptingRequest
+        ? await supabase.rpc('admin_accept_client_request', {
+            target_request_id: sourceRequestId,
+            ...appointmentValues,
+          })
+        : await supabase.rpc('admin_save_appointment_with_services', {
+            target_appointment_id: appointmentForm.id || null,
+            target_client_id: appointmentForm.clientId,
+            target_status: appointmentForm.status === 'otkazan' ? 'cancelled' : appointmentForm.status === 'zavrsen' ? 'completed' : 'confirmed',
+            ...appointmentValues,
+          })
       if (result.error || !result.data) { setSyncStatus('error'); setNotice('Termin nije sinkroniziran. Pokušajte ponovno.'); return }
-      savedId = result.data
+      savedId = acceptingRequest
+        ? (result.data as { appointment_id: string }[])[0]?.appointment_id
+        : result.data as string
+      if (!savedId) { setSyncStatus('error'); setNotice('Termin nije potvrđen.'); return }
       setSyncStatus('synced')
     }
     const appointment = {
@@ -483,8 +614,8 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     }
     update({ ...data, appointments: upsertAppointment(data.appointments, appointment) }, supabase ? 'Termin je sinkroniziran.' : 'Termin je lokalno spremljen.')
     const client = data.clients.find(item => item.id === appointment.clientId)
-    let nextPortal: PortalData = { ...portal, notifications: replaceAppointmentReminders(portal.notifications, appointment, client) }
-    if (sourceRequestId) nextPortal = { ...nextPortal, requests: nextPortal.requests.map(item => item.id === sourceRequestId ? { ...item, status: 'potvrđeno', appointmentId: appointment.id, updatedAt: now } : item) }
+    const nextPortal: PortalData = { ...portal, notifications: replaceAppointmentReminders(portal.notifications, appointment, client) }
+    if (sourceRequestId) await loadAdminInbox()
     updatePortal(nextPortal); setSourceRequestId(''); setAppointmentForm(null)
   }
   function replyToRequest(requestId: string, status: 'u_razgovoru' | 'odbijeno') {
@@ -547,6 +678,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       update({ ...data, hairstyles: addHairstyle(data.hairstyles, entry) }, 'Frizura je dodana u arhivu.'); imageFiles.current = {}; setArchiveOpen(false)
     } catch { setNotice('Fotografije nije bilo moguće obraditi.') }
   }
+  const inboxCounts = adminInboxCounts(adminRequests, adminMessages)
   const title = view === 'arhiva-termina' ? 'Arhiva termina' : nav.find(item => item.id === view)?.label
   const todayCalendarDate = localDateString(new Date())
   const viewingToday = selectedCalendarDate === todayCalendarDate
@@ -558,21 +690,24 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     ?? ''
   return <div className="app-shell">
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong><small>Topla elegancija</small></div></div>
-      <nav>{nav.map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{item.id === 'poruke' && data.messages.some(m => !m.read) && <i />}</button>)}</nav>
+      <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
     </aside>
     <main><header><div><p className="eyebrow">Salon Kristina</p><h1>{title}</h1></div><div className={`header-actions sync-${syncStatus}`}><span className="status-dot" /> {syncStatusLabel(syncStatus)}</div></header>
+      {view === 'pregled' && <div className="dashboard-inbox-summary"><button onClick={()=>changeView('zahtjevi-live')}><strong>{inboxCounts.requests}</strong><span>Novi zahtjevi</span></button><button onClick={()=>changeView('poruke-live')}><strong>{inboxCounts.messages}</strong><span>Nove poruke</span></button></div>}
       {view === 'pregled' && <section className="day-schedule"><div className="schedule-toolbar"><div><p className="eyebrow">DANAŠNJI RASPORED</p><h2>{new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString('hr-HR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h2></div><div className="schedule-navigation">{!viewingToday&&<button className="secondary day-arrow" type="button" aria-label="Prethodni dan" onClick={()=>moveCalendarDay(-1)}>‹</button>}<button className="secondary today-button" type="button" onClick={()=>void requestCalendarDate(todayCalendarDate)}>Danas</button><button className="secondary day-arrow" type="button" aria-label="Sljedeći dan" onClick={()=>moveCalendarDay(1)}>›</button><input aria-label="Odaberite datum rasporeda" type="date" min={todayCalendarDate} value={selectedCalendarDate} onChange={event=>void requestCalendarDate(event.target.value)}/></div></div><p className={`working-hours-label ${workingHours?'':'closed'}`}>{workingHoursLabel}</p><p className="schedule-hint">Radno vrijeme označeno je toplom pozadinom; termini izvan njega i dalje su dopušteni.</p><div className="calendar-scroll"><div className="day-calendar"><div className="calendar-time-axis" aria-hidden="true">{calendarMarks.map(mark=><span className={mark.isHour?'hour':'half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}>{mark.label}</span>)}</div><div className={`calendar-grid ${workingHours?'has-working-hours':'closed-day'}`} onClick={openCalendarSlot}>{workingHours&&<span className="working-hours-band" aria-hidden="true" style={{top:`${workingHours.topPercent}%`,height:`${workingHours.heightPercent}%`}}/>}{calendarMarks.map(mark=><span className={mark.isHour?'calendar-line hour':'calendar-line half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}/>)}{calendarAppointments.map(item=>{const catalogDuration=serviceCatalog.find(service=>service.id===item.serviceId)?.durationMinutes;const layout=calendarEventLayout(item.dateTime,item.serviceDuration??catalogDuration);if(!layout.visible)return null;const start=item.dateTime.slice(11,16);const end=minutesToTime(timeToMinutes(start)+layout.displayDuration);return <button type="button" className={`calendar-event ${item.status} ${item.noCharge?'no-charge':''}`} style={{top:`${layout.topPercent}%`,height:`max(${layout.heightPercent}%, 34px)`}} key={item.id} onClick={event=>{event.stopPropagation();setAppointmentForm(item)}}><time>{start}–{end}</time><strong>{findClientName(data.clients,item.clientId)}</strong><span>{item.service}</span><small>{item.noCharge?'Gratis':appointmentStatusLabel(item.status)}</small></button>})}</div></div></div></section>}
       {view === 'klijenti' && <section className="panel"><div className="panel-head stack-mobile"><div><p className="eyebrow">KARTOTEKA</p><h2>Moji klijenti</h2></div><div className="toolbar"><input aria-label="Pretraži klijente" placeholder="Pretraži ime ili telefon…" value={query} onChange={e => setQuery(e.target.value)} /><button className="primary" onClick={() => setClientForm(emptyClient())}>+ Novi klijent</button></div></div>
-        <div className="client-grid">{filteredClients.map(client => { const portalActive = portalStatuses[client.id]?.activated === true; return <article className="client-card" key={client.id}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.firstName} {client.lastName}</h3><a href={`tel:${client.phone}`}>{client.phone}</a><p>{client.note || 'Nema zabilješke.'}</p><section className="client-portal-access"><strong>Pristup klijentskom portalu</strong><span className={portalActive ? 'portal-active' : 'portal-inactive'}>{portalActive ? `Portal aktiviran${portalStatuses[client.id]?.temporary ? ' · promjena PIN-a obavezna' : ''}` : 'Portal nije aktiviran'}</span>{portalActive ? <button className="invite-action" onClick={() => openTemporaryPin(client.id)}>Postavi novi privremeni PIN</button> : <button className="invite-action" onClick={() => void sendPortalAccess(client.id)}>Pošalji pristup</button>}</section></div><button className="more" onClick={() => setClientForm(client)}>Uredi</button></article> })}</div></section>}
+        <div className="client-grid">{filteredClients.map(client => { const portalActive = portalStatuses[client.id]?.activated === true;const clientUnreadMessages=adminMessages.filter(item=>item.clientId===client.id&&item.sender==='client'&&!item.read&&!item.archivedAt).length;const clientNewRequests=adminRequests.filter(item=>item.clientId===client.id&&item.status==='pending'&&!item.readAt).length;return <article className="client-card" key={client.id}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.firstName} {client.lastName}</h3><a href={`tel:${client.phone}`}>{client.phone}</a>{(clientUnreadMessages>0||clientNewRequests>0)&&<div className="client-alerts">{clientUnreadMessages>0&&<span>{clientUnreadMessages} novih poruka</span>}{clientNewRequests>0&&<span>{clientNewRequests} novih zahtjeva</span>}</div>}<p>{client.note || 'Nema zabilješke.'}</p><section className="client-portal-access"><strong>Pristup klijentskom portalu</strong><span className={portalActive ? 'portal-active' : 'portal-inactive'}>{portalActive ? `Portal aktiviran${portalStatuses[client.id]?.temporary ? ' · promjena PIN-a obavezna' : ''}` : 'Portal nije aktiviran'}</span>{portalActive ? <button className="invite-action" onClick={() => openTemporaryPin(client.id)}>Postavi novi privremeni PIN</button> : <button className="invite-action" onClick={() => void sendPortalAccess(client.id)}>Pošalji pristup</button>}</section></div><button className="more" onClick={() => setClientForm(client)}>Uredi</button></article> })}</div></section>}
       {view === 'cjenik' && <section className="panel price-panel"><div className="panel-head"><div><p className="eyebrow">USLUGE I CIJENE</p><h2>Cjenik</h2></div><button className="secondary compact-action" onClick={() => setCategoryForm({id:'',name:'',isActive:true,displayOrder:categoryCatalog.length+1})}>+ Kategorija</button></div><div className="admin-price-accordion">{orderedCategories(categoryCatalog).map(category=>{const open=openPriceCategoryId===category.id;const categoryServices=orderedServices(serviceCatalog.filter(item=>item.categoryId===category.id));return <article className={`admin-price-category ${open?'open':''}`} key={category.id}><div className="admin-category-row"><button className="category-toggle" type="button" aria-expanded={open} onClick={()=>setOpenPriceCategoryId(open?'':category.id)}><span className="category-chevron" aria-hidden="true">›</span><span><strong>{category.name}</strong><small>{categoryServices.length} {categoryServices.length===1?'stavka':'stavki'} · {category.isActive?'Aktivna':'Neaktivna'}</small></span></button><button className="link compact-edit" type="button" onClick={()=>setCategoryForm(category)}>Uredi</button></div>{open&&<div className="admin-category-items">{categoryServices.map(item=><div className="admin-price-row" key={item.id}><div><span>{item.name}</span><small>{item.durationMinutes?`${item.durationMinutes} min`:'Trajanje nije uneseno'} · {item.isActive?'Aktivna':'Neaktivna'} · {item.isBookable?'Za termin':'Dodatak'}</small></div><strong>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</strong><button className="link compact-edit" type="button" onClick={()=>setServiceForm(item)}>Uredi</button></div>)}<button className="link add-category-service" type="button" onClick={()=>setServiceForm({id:'',categoryId:category.id,categoryName:category.name,name:'',price:0,isActive:true,isBookable:true,displayOrder:categoryServices.length+1})}>+ Dodaj uslugu</button></div>}</article>})}</div></section>}
       {view === 'zahtjevi' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">KLIJENTSKI PORTAL</p><h2>Zahtjevi klijenata</h2></div><span className="request-count">{openRequests.length} otvorenih</span></div><div className="request-inbox">{portal.requests.length ? portal.requests.map(request => <article key={request.id} className={`request-card ${request.status}`}><div className="request-card-head"><div><strong>{findClientName(data.clients,request.clientId)}</strong><small>{formatDateTime(request.createdAt)}</small></div><span>{request.status.replace('_',' ')}</span></div><p><b>{request.kind === 'termin' ? request.service : request.kind === 'promjena' ? 'Zahtjev za promjenu' : 'Zahtjev za otkazivanje'}</b></p>{request.preferredDates.length > 0 && <p>Poželjni dani: {request.preferredDates.map(formatDate).join(', ')} · {request.dayPeriod}</p>}<p>{request.message || 'Bez dodatne poruke.'}</p>{request.adminReply && <p className="admin-reply">Odgovor: {request.adminReply}</p>}<div className="request-actions">{request.kind === 'termin' && request.status !== 'potvrđeno' && <button className="primary" onClick={() => createAppointmentFromRequest(request.id)}>Izradi termin</button>}<button className="secondary" onClick={() => replyToRequest(request.id,'u_razgovoru')}>Odgovori / drugi prijedlog</button><button className="danger-action" onClick={() => replyToRequest(request.id,'odbijeno')}>Odbij</button></div></article>) : <p className="empty-state">Još nema zahtjeva iz klijentskog portala.</p>}</div></section>}
       {view === 'poruke' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INBOX</p><h2>Poruke klijenata</h2></div></div><div className="message-list">{[...data.messages].sort((a,b) => b.createdAt.localeCompare(a.createdAt)).map(message => <button key={message.id} className={`message ${message.read?'':'unread'}`} onClick={() => update({...data,messages:markMessageRead(data.messages,message.id)})}><span className="avatar">{message.senderName.split(' ').map(x=>x[0]).join('').slice(0,2)}</span><div><div><strong>{message.senderName}</strong><time>{formatDateTime(message.createdAt)}</time></div><p>{message.text}</p><small>{message.senderPhone}</small></div></button>)}</div></section>}
       {view === 'arhiva' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INSPIRACIJA I POVIJEST</p><h2>Arhiva frizura</h2></div><button className="primary" onClick={() => setArchiveOpen(true)}>+ Dodaj frizuru</button></div><div className="gallery">{data.hairstyles.map(entry => <article key={entry.id}><div className="photo-pair"><figure><img src={entry.before.thumb} alt="Prije" /><figcaption>Prije</figcaption></figure>{entry.after&&<figure><img src={entry.after.thumb} alt="Poslije" /><figcaption>Poslije</figcaption></figure>}</div><div><small>{formatDate(entry.date)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.note}</p><button className="link" onClick={() => update({...data,hairstyles:data.hairstyles.map(item => item.id === entry.id ? {...item,visibleToClient:!item.visibleToClient}:item)},entry.visibleToClient?'Fotografija više nije vidljiva klijentu.':'Fotografija je vidljiva klijentu.')}>{entry.visibleToClient?'Sakrij od klijenta':'Podijeli s klijentom'}</button></div></article>)}</div></section>}
       {view === 'postavke' && <section className="panel settings-panel"><div className="panel-head"><div><p className="eyebrow">SIGURNOST</p><h2>Postavke</h2></div></div><div className="settings-list"><div><div><strong>Administratorski PIN</strong><p>Postavite ili promijenite PIN koji štiti arhivu termina.</p></div><button className="secondary" type="button" onClick={()=>void openAdminPinSettings()}>{adminPinSet===false?'Postavi PIN':'Postavi ili promijeni PIN'}</button></div><div><div><strong>Arhiva termina</strong><p>Pregled prošlih termina zaštićen administratorskim PIN-om.</p></div><button className="secondary" type="button" onClick={()=>void openAppointmentArchive()}>Otvori arhivu</button></div></div></section>}
       {view === 'arhiva-termina' && appointmentArchiveUnlocked && <section className="panel appointment-archive"><div className="panel-head"><div><p className="eyebrow">ZAŠTIĆENI PREGLED</p><h2>Arhiva termina</h2></div><button className="secondary" type="button" onClick={()=>setView('postavke')}>Natrag</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{pastAppointments.map(item=><tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.noCharge?'no-charge':item.status}`}>{item.noCharge?'Privatno / gratis – bez naplate':appointmentStatusLabel(item.status)}</span></td><td><button className="link" type="button" onClick={()=>setAppointmentForm(item)}>Uredi</button></td></tr>)}</tbody></table>{pastAppointments.length===0&&<p className="empty-state">Nema evidentiranih prošlih termina.</p>}</div></section>}
+      {view === 'zahtjevi-live' && <AdminRequestInbox requests={adminRequests} selected={selectedAdminRequest} busy={inboxBusy} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
+      {view === 'poruke-live' && <AdminMessageInbox messages={adminMessages} selected={selectedAdminMessage} showArchive={showMessageArchive} busy={inboxBusy} onToggleArchive={()=>{setSelectedAdminMessage(undefined);setShowMessageArchive(value=>!value)}} onOpen={openAdminMessage} onReply={replyToAdminMessage} onArchive={archiveAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
-    <div className="mobile-nav">{nav.map(item => <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</div>{notice&&<div className="toast">{notice}</div>}
+    <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}
     {inviteLink&&<Modal title="Pošalji pristup" onClose={() => setInviteLink('')}><div className="invite-modal"><p>Ovaj uređaj nema izvorni izbornik za dijeljenje. Kopirajte adresu i pošaljite je klijentu.</p><textarea readOnly rows={4} value={inviteLink}/><button className="primary" onClick={() => void navigator.clipboard.writeText(inviteLink)}>Kopiraj adresu</button></div></Modal>}
     {pinClientId&&<Modal title="Novi privremeni PIN" onClose={() => setPinClientId('')}><form onSubmit={event => void saveTemporaryPin(event)}><p className="pin-guidance">Postavite novi četveroznamenkasti PIN. Prethodni PIN odmah će prestati vrijediti.</p><label>Novi PIN<input required type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} value={temporaryPin} onChange={event => setTemporaryPin(event.target.value.replace(/\D/g, '').slice(0, 4))}/></label><label>Potvrdite PIN<input required type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} value={temporaryPinConfirm} onChange={event => setTemporaryPinConfirm(event.target.value.replace(/\D/g, '').slice(0, 4))}/></label>{pinError&&<p className="form-error" role="alert">{pinError}</p>}<FormActions disabled={temporaryPin.length !== 4 || temporaryPinConfirm.length !== 4} onCancel={() => setPinClientId('')}/></form></Modal>}
     {issuedTemporaryPin&&<Modal title="Privremeni PIN je postavljen" onClose={() => setIssuedTemporaryPin(null)}><div className="issued-pin"><p>Novi privremeni PIN prikazuje se samo sada:</p><output aria-label="Novi privremeni PIN">{issuedTemporaryPin.pin}</output><button className="primary" type="button" onClick={() => void navigator.clipboard.writeText(issuedTemporaryPin.pin)}>Kopiraj PIN</button><p className="pin-warning" role="alert">Pošaljite ovaj PIN klijentu sigurnim putem. Nakon zatvaranja više ga nećete moći vidjeti.</p></div></Modal>}
