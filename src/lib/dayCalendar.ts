@@ -23,6 +23,14 @@ export function calendarWorkingHours(dateValue: string) {
   }
 }
 
+export function calendarWorkingHoursLabel(dateValue: string) {
+  const hours = calendarWorkingHours(dateValue)
+  if (!hours) return 'Danas ne radimo'
+  const format = (minutes: number) =>
+    `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+  return `Radno vrijeme danas: ${format(hours.start)}–${format(hours.end)}`
+}
+
 export function minutesFromDateTime(dateTime: string) {
   const time = dateTime.slice(11, 16)
   const [hours, minutes] = time.split(':').map(Number)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calendarEventLayout, calendarTimeMarks, calendarWorkingHours, timeFromCalendarPosition } from './dayCalendar'
+import { calendarEventLayout, calendarTimeMarks, calendarWorkingHours, calendarWorkingHoursLabel, timeFromCalendarPosition } from './dayCalendar'
 
 describe('dnevni kalendar', () => {
   it('postavlja termin na stvarni položaj i koristi 30 minuta bez trajanja', () => {
@@ -35,5 +35,15 @@ describe('dnevni kalendar', () => {
 
   it('nedjeljom označava cijeli kalendar kao vrijeme izvan radnog vremena', () => {
     expect(calendarWorkingHours('2026-07-26')).toBeNull()
+  })
+
+  it('ispisuje jasnu oznaku radnog vremena za svaki dan u tjednu', () => {
+    expect(calendarWorkingHoursLabel('2026-07-27')).toBe('Radno vrijeme danas: 13:00–19:00')
+    expect(calendarWorkingHoursLabel('2026-07-28')).toBe('Radno vrijeme danas: 08:00–14:00')
+    expect(calendarWorkingHoursLabel('2026-07-29')).toBe('Radno vrijeme danas: 12:00–19:00')
+    expect(calendarWorkingHoursLabel('2026-07-30')).toBe('Radno vrijeme danas: 12:00–19:00')
+    expect(calendarWorkingHoursLabel('2026-07-31')).toBe('Radno vrijeme danas: 12:00–19:00')
+    expect(calendarWorkingHoursLabel('2026-08-01')).toBe('Radno vrijeme danas: 08:00–14:00')
+    expect(calendarWorkingHoursLabel('2026-08-02')).toBe('Danas ne radimo')
   })
 })

@@ -342,6 +342,26 @@
   font-size: 12px;
 }
 
+.working-hours-label {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  margin: 0 0 5px;
+  padding: 7px 11px;
+  border: 1px solid #dfc8b8;
+  border-radius: 9px;
+  background: #f8eadf;
+  color: #6c4b3e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.working-hours-label.closed {
+  border-color: #d7d7d3;
+  background: #efefed;
+  color: #66645f;
+}
+
 .calendar-scroll {
   max-width: 1100px;
   overflow-x: hidden;

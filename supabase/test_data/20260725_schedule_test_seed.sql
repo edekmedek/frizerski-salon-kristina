@@ -21,18 +21,18 @@ insert into public.clients (
   id, first_name, last_name, phone, notes, is_active, test_seed_tag
 )
 values
-  ('a1000000-0000-4000-8000-000000000001', 'TEST Ana', 'Radić', '0999100001', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000002', 'TEST Marko', 'Kovačević', '0999100002', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000003', 'TEST Petra', 'Horvat', '0999100003', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000004', 'TEST Luka', 'Barišić', '0999100004', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000005', 'TEST Ivana', 'Jurić', '0999100005', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000006', 'TEST Nikola', 'Perić', '0999100006', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000007', 'TEST Maja', 'Božić', '0999100007', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000008', 'TEST Dario', 'Marić', '0999100008', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000009', 'TEST Lucija', 'Vuković', '0999100009', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000010', 'TEST Tomislav', 'Pavić', '0999100010', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000011', 'TEST Ema', 'Šarić', '0999100011', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
-  ('a1000000-0000-4000-8000-000000000012', 'TEST Filip', 'Babić', '0999100012', '[TEST] Izmišljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1')
+  ('a1000000-0000-4000-8000-000000000001', 'TEST Ana', U&'Radi\0107', '0999100001', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000002', 'TEST Marko', U&'Kova\010Devi\0107', '0999100002', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000003', 'TEST Petra', 'Horvat', '0999100003', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000004', 'TEST Luka', U&'Bari\0161i\0107', '0999100004', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000005', 'TEST Ivana', U&'Juri\0107', '0999100005', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000006', 'TEST Nikola', U&'Peri\0107', '0999100006', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000007', 'TEST Maja', U&'Bo\017Ei\0107', '0999100007', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000008', 'TEST Dario', U&'Mari\0107', '0999100008', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000009', 'TEST Lucija', U&'Vukovi\0107', '0999100009', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000010', 'TEST Tomislav', U&'Pavi\0107', '0999100010', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000011', 'TEST Ema', U&'\0160ari\0107', '0999100011', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1'),
+  ('a1000000-0000-4000-8000-000000000012', 'TEST Filip', U&'Babi\0107', '0999100012', U&'[TEST] Izmi\0161ljeni klijent za provjeru rasporeda.', true, 'kristina_schedule_seed_v1')
 on conflict (id) do nothing;
 
 do $preflight$
@@ -81,7 +81,14 @@ planned as (
     s.*,
     c.id as client_id,
     service.id as service_id,
-    service.name as service_name,
+    case
+      when position(chr(195) in service.name) > 0
+        or position(chr(196) in service.name) > 0
+        or position(chr(197) in service.name) > 0
+        or position(chr(226) in service.name) > 0
+      then convert_from(convert_to(service.name, 'WIN1252'), 'UTF8')
+      else service.name
+    end as service_name,
     service.price as service_price,
     case ((s.day_number + s.slot) % 5)
       when 0 then 30 when 1 then 45 when 2 then 60 when 3 then 90 else 120
@@ -132,7 +139,7 @@ select
   service_price,
   duration_minutes,
   appointment_status,
-  '[TEST] Probni termin — kristina_schedule_seed_v1',
+  U&'[TEST] Probni termin \2013 kristina_schedule_seed_v1',
   no_charge,
   'kristina_schedule_seed_v1'
 from appointments_to_insert
