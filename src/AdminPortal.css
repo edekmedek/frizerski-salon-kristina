@@ -163,12 +163,134 @@
   min-height: 22px;
 }
 
-.price-category-table {
-  margin-bottom: 28px;
+.price-panel {
+  overflow: hidden;
 }
 
-.price-category-table table {
-  min-width: 520px;
+.compact-action {
+  min-height: 44px;
+  padding: 8px 13px;
+  white-space: nowrap;
+}
+
+.admin-price-accordion {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-price-category {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffefa;
+}
+
+.admin-category-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 52px;
+}
+
+.category-toggle {
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  overflow: visible;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.category-toggle > span:last-child {
+  min-width: 0;
+}
+
+.category-toggle strong,
+.category-toggle small {
+  display: block;
+  overflow: visible;
+  line-height: 1.4;
+}
+
+.category-toggle strong {
+  font-size: 14px;
+}
+
+.category-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.category-chevron {
+  flex: 0 0 auto;
+  color: var(--terracotta);
+  font: 600 22px/1 Arial, sans-serif;
+  transform: rotate(0);
+  transition: transform .18s ease;
+}
+
+.open > .admin-category-row .category-chevron,
+.client-price-category.open > button .category-chevron {
+  transform: rotate(90deg);
+}
+
+.compact-edit {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.admin-category-items {
+  padding: 0 10px 8px 38px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+
+.admin-price-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-price-row > div {
+  min-width: 0;
+}
+
+.admin-price-row span,
+.admin-price-row small {
+  display: block;
+  overflow: visible;
+  line-height: 1.4;
+}
+
+.admin-price-row span {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.admin-price-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-price-row > strong {
+  white-space: nowrap;
+  color: var(--terracotta);
+  font-size: 13px;
+}
+
+.add-category-service {
+  min-height: 44px;
+  margin-top: 4px;
 }
 
 .mobile-nav {
@@ -183,5 +305,28 @@
   .mobile-nav button {
     min-width: 0;
     font-size: 8px;
+  }
+
+  .price-panel {
+    padding: 14px 10px;
+  }
+
+  .price-panel .panel-head {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .admin-category-items {
+    padding-left: 12px;
+  }
+
+  .admin-price-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+
+  .admin-price-row .compact-edit {
+    grid-column: 2;
+    padding: 3px 6px;
   }
 }
