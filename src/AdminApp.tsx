@@ -13,6 +13,7 @@ import type { ClientNotification, PortalData } from './portalTypes'
 import { loadPortalData, savePortalData } from './lib/portalStorage'
 import { replaceAppointmentReminders } from './lib/reminders'
 import { appointmentServices, appointmentStatusLabel, orderedCategories, orderedServices } from './lib/serviceRules'
+import { calendarEventLayout, calendarTimeMarks, timeFromCalendarPosition } from './lib/dayCalendar'
 import { supabase } from './lib/supabase'
 import './Portal.css'
 import './AdminPortal.css'
@@ -20,7 +21,7 @@ import './AdminPortal.css'
 type View = 'pregled' | 'klijenti' | 'termini' | 'cjenik' | 'zahtjevi' | 'poruke' | 'arhiva'
 const currentUserRole: 'administrator' | 'client' = 'administrator'
 const nav: { id: View; label: string; icon: string }[] = [
-  { id: 'pregled', label: 'Pregled', icon: '⌂' }, { id: 'klijenti', label: 'Klijenti', icon: '♡' },
+  { id: 'pregled', label: 'Raspored', icon: '⌂' }, { id: 'klijenti', label: 'Klijenti', icon: '♡' },
   { id: 'termini', label: 'Termini', icon: '◷' }, { id: 'zahtjevi', label: 'Zahtjevi', icon: '◇' },
   { id: 'cjenik', label: 'Cjenik', icon: '€' }, { id: 'poruke', label: 'Poruke', icon: '✉' }, { id: 'arhiva', label: 'Arhiva', icon: '▧' },
 ]
@@ -105,15 +106,30 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [categoryCatalog, setCategoryCatalog] = useState<ServiceCategory[]>([])
   const [categoryForm, setCategoryForm] = useState<ServiceCategory | null>(null)
   const [openPriceCategoryId, setOpenPriceCategoryId] = useState('')
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => localDateString(new Date()))
   const clientSavingRef = useRef(false)
   const imageFiles = useRef<{ before?: File; after?: File }>({})
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) { setNotice(message); window.setTimeout(() => setNotice(''), 2600) } }
   function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
   const filteredClients = useMemo(() => { const term = query.trim().toLocaleLowerCase('hr'); return term ? data.clients.filter(c => `${c.firstName} ${c.lastName} ${c.phone}`.toLocaleLowerCase('hr').includes(term)) : data.clients }, [data.clients, query])
-  const upcoming = [...data.appointments].filter(a => a.status === 'zakazan').sort((a,b) => a.dateTime.localeCompare(b.dateTime))
+  const calendarAppointments = data.appointments
+    .filter(item => item.dateTime.slice(0, 10) === selectedCalendarDate)
+    .sort((left, right) => left.dateTime.localeCompare(right.dateTime))
+  const calendarMarks = useMemo(() => calendarTimeMarks(), [])
   const openRequests = portal.requests.filter(item => item.status === 'novo' || item.status === 'u_razgovoru')
 
   function updatePortal(next: PortalData) { setPortal(next); savePortalData(next) }
+  function moveCalendarDay(offset: number) {
+    const date = new Date(`${selectedCalendarDate}T12:00:00`)
+    date.setDate(date.getDate() + offset)
+    setSelectedCalendarDate(localDateString(date))
+  }
+  function openCalendarSlot(event: React.MouseEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest('.calendar-event')) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const time = timeFromCalendarPosition(event.clientY - bounds.top, bounds.height)
+    setAppointmentForm({ ...emptyAppointment(data.appointments), dateTime: `${selectedCalendarDate}T${time}` })
+  }
 
   useEffect(() => {
     async function loadSupabaseClients() {
@@ -380,9 +396,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
     </aside>
     <main><header><div><p className="eyebrow">Salon Kristina</p><h1>{title}</h1></div><div className="header-actions"><span className="status-dot" /> Lokalno spremljeno</div></header>
-      {view === 'pregled' && <><section className="welcome"><div><p className="eyebrow">DOBAR DAN, KRISTINA</p><h2>Što vas danas očekuje?</h2><p>Sve važne informacije na jednom mirnom mjestu.</p></div><button className="primary" onClick={() => { setAppointmentForm(emptyAppointment(data.appointments)); setView('termini') }}>+ Novi termin</button></section>
-        <div className="stats"><article><span>◷</span><div><strong>{upcoming.length}</strong><small>Aktivnih termina</small></div></article><article><span>♡</span><div><strong>{data.clients.length}</strong><small>Klijenata u kartoteci</small></div></article><article><span>✉</span><div><strong>{data.messages.filter(m => !m.read).length}</strong><small>Nepročitanih poruka</small></div></article><article><span>▧</span><div><strong>{data.hairstyles.length}</strong><small>Frizura u arhivi</small></div></article></div>
-        <section className="panel"><div className="panel-head"><div><p className="eyebrow">RASPORED</p><h2>Nadolazeći termini</h2></div><button className="link" onClick={() => setView('termini')}>Prikaži sve →</button></div><div className="appointment-list">{upcoming.slice(0,4).map(item => <button className="appointment-row" key={item.id} onClick={() => { setAppointmentForm(item); setView('termini') }}><time>{new Date(item.dateTime).toLocaleTimeString('hr-HR',{hour:'2-digit',minute:'2-digit'})}</time><div><strong>{findClientName(data.clients,item.clientId)}</strong><small>{item.service}</small></div><span>{formatDateTime(item.dateTime).split(',')[0]}</span></button>)}</div></section></>}
+      {view === 'pregled' && <section className="day-schedule"><div className="schedule-toolbar"><div><p className="eyebrow">DANAŠNJI RASPORED</p><h2>{new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString('hr-HR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h2></div><div className="schedule-navigation"><button className="secondary day-arrow" type="button" aria-label="Prethodni dan" onClick={()=>moveCalendarDay(-1)}>‹</button><button className="secondary today-button" type="button" onClick={()=>setSelectedCalendarDate(localDateString(new Date()))}>Danas</button><button className="secondary day-arrow" type="button" aria-label="Sljedeći dan" onClick={()=>moveCalendarDay(1)}>›</button><input aria-label="Odaberite datum rasporeda" type="date" value={selectedCalendarDate} onChange={event=>setSelectedCalendarDate(event.target.value)}/></div></div><p className="schedule-hint">Dodirnite ili kliknite prazno vrijeme za novi termin.</p><div className="calendar-scroll"><div className="day-calendar"><div className="calendar-time-axis" aria-hidden="true">{calendarMarks.map(mark=><span className={mark.isHour?'hour':'half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}>{mark.label}</span>)}</div><div className="calendar-grid" onClick={openCalendarSlot}>{calendarMarks.map(mark=><span className={mark.isHour?'calendar-line hour':'calendar-line half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}/>)}{calendarAppointments.map(item=>{const catalogDuration=serviceCatalog.find(service=>service.id===item.serviceId)?.durationMinutes;const layout=calendarEventLayout(item.dateTime,item.serviceDuration??catalogDuration);if(!layout.visible)return null;const start=item.dateTime.slice(11,16);const end=minutesToTime(timeToMinutes(start)+layout.displayDuration);return <button type="button" className={`calendar-event ${item.status}`} style={{top:`${layout.topPercent}%`,height:`max(${layout.heightPercent}%, 34px)`}} key={item.id} onClick={event=>{event.stopPropagation();setAppointmentForm(item)}}><time>{start}–{end}</time><strong>{findClientName(data.clients,item.clientId)}</strong><span>{item.service}</span><small>{appointmentStatusLabel(item.status)}</small></button>})}</div></div></div></section>}
       {view === 'klijenti' && <section className="panel"><div className="panel-head stack-mobile"><div><p className="eyebrow">KARTOTEKA</p><h2>Moji klijenti</h2></div><div className="toolbar"><input aria-label="Pretraži klijente" placeholder="Pretraži ime ili telefon…" value={query} onChange={e => setQuery(e.target.value)} /><button className="primary" onClick={() => setClientForm(emptyClient())}>+ Novi klijent</button></div></div>
         <div className="client-grid">{filteredClients.map(client => { const portalActive = portalStatuses[client.id]?.activated === true; return <article className="client-card" key={client.id}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.firstName} {client.lastName}</h3><a href={`tel:${client.phone}`}>{client.phone}</a><p>{client.note || 'Nema zabilješke.'}</p><section className="client-portal-access"><strong>Pristup klijentskom portalu</strong><span className={portalActive ? 'portal-active' : 'portal-inactive'}>{portalActive ? `Portal aktiviran${portalStatuses[client.id]?.temporary ? ' · promjena PIN-a obavezna' : ''}` : 'Portal nije aktiviran'}</span>{portalActive ? <button className="invite-action" onClick={() => openTemporaryPin(client.id)}>Postavi novi privremeni PIN</button> : <button className="invite-action" onClick={() => void sendPortalAccess(client.id)}>Pošalji pristup</button>}</section></div><button className="more" onClick={() => setClientForm(client)}>Uredi</button></article> })}</div></section>}
       {view === 'termini' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">KRISTININ RASPORED</p><h2>Termini</h2></div><button className="primary" onClick={() => setAppointmentForm(emptyAppointment(data.appointments))}>+ Novi termin</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{[...data.appointments].sort((a,b) => a.dateTime.localeCompare(b.dateTime)).map(item => <tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.status}`}>{appointmentStatusLabel(item.status)}</span></td><td><button className="link" onClick={() => setAppointmentForm(item)}>Uredi</button><button className="link" onClick={() => sendAppointmentMessage(item)}>Poruka</button></td></tr>)}</tbody></table></div></section>}
