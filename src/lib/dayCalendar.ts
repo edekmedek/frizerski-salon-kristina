@@ -2,6 +2,27 @@ export const CALENDAR_START_MINUTES = 7 * 60
 export const CALENDAR_END_MINUTES = 22 * 60
 export const CALENDAR_DURATION_MINUTES = CALENDAR_END_MINUTES - CALENDAR_START_MINUTES
 
+const WORKING_HOURS: Record<number, { start: number; end: number } | null> = {
+  0: null,
+  1: { start: 13 * 60, end: 19 * 60 },
+  2: { start: 8 * 60, end: 14 * 60 },
+  3: { start: 12 * 60, end: 19 * 60 },
+  4: { start: 12 * 60, end: 19 * 60 },
+  5: { start: 12 * 60, end: 19 * 60 },
+  6: { start: 8 * 60, end: 14 * 60 },
+}
+
+export function calendarWorkingHours(dateValue: string) {
+  const day = new Date(`${dateValue}T12:00:00`).getDay()
+  const hours = WORKING_HOURS[day]
+  if (!hours) return null
+  return {
+    ...hours,
+    topPercent: ((hours.start - CALENDAR_START_MINUTES) / CALENDAR_DURATION_MINUTES) * 100,
+    heightPercent: ((hours.end - hours.start) / CALENDAR_DURATION_MINUTES) * 100,
+  }
+}
+
 export function minutesFromDateTime(dateTime: string) {
   const time = dateTime.slice(11, 16)
   const [hours, minutes] = time.split(':').map(Number)

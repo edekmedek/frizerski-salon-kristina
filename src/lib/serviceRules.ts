@@ -19,5 +19,7 @@ export function orderedCategories(categories: ServiceCategory[]) {
 }
 
 export function appointmentStatusLabel(status: AppointmentStatus) {
-  return status === 'zakazan' ? 'Zakazan' : 'Otkazano'
+  if (status === 'zakazan') return 'Zakazan'
+  if (status === 'zavrsen') return 'Završen'
+  return 'Otkazano'
 }

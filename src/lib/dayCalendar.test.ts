@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calendarEventLayout, calendarTimeMarks, timeFromCalendarPosition } from './dayCalendar'
+import { calendarEventLayout, calendarTimeMarks, calendarWorkingHours, timeFromCalendarPosition } from './dayCalendar'
 
 describe('dnevni kalendar', () => {
   it('postavlja termin na stvarni položaj i koristi 30 minuta bez trajanja', () => {
@@ -24,5 +24,16 @@ describe('dnevni kalendar', () => {
     expect(marks[0]).toMatchObject({ label: '07:00', isHour: true })
     expect(marks[1]).toMatchObject({ label: '07:30', isHour: false })
     expect(marks.at(-1)).toMatchObject({ label: '22:00', isHour: true })
+  })
+
+  it('prikazuje službeno radno vrijeme kao vizualnu smjernicu', () => {
+    expect(calendarWorkingHours('2026-07-27')).toMatchObject({ start: 780, end: 1140 })
+    expect(calendarWorkingHours('2026-07-28')).toMatchObject({ start: 480, end: 840 })
+    expect(calendarWorkingHours('2026-07-29')).toMatchObject({ start: 720, end: 1140 })
+    expect(calendarWorkingHours('2026-08-01')).toMatchObject({ start: 480, end: 840 })
+  })
+
+  it('nedjeljom označava cijeli kalendar kao vrijeme izvan radnog vremena', () => {
+    expect(calendarWorkingHours('2026-07-26')).toBeNull()
   })
 })

@@ -381,7 +381,22 @@
 
 .calendar-grid {
   border-left: 1px solid #d8c9bf;
+  background: #f1f0ee;
   cursor: crosshair;
+}
+
+.working-hours-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: #f8eadf;
+  box-shadow: inset 0 1px #dfc8b8, inset 0 -1px #dfc8b8;
+}
+
+.calendar-grid.closed-day {
+  background: #efefed;
 }
 
 .calendar-line {
@@ -390,6 +405,7 @@
   right: 0;
   height: 1px;
   pointer-events: none;
+  z-index: 1;
   background: #eadfd7;
 }
 
@@ -458,6 +474,17 @@
   border-left-color: #a96057;
   background: #f3e4e1;
   color: #7b413b;
+}
+
+.calendar-event.zavrsen {
+  border-left-color: #73808a;
+  background: #e8ecef;
+  color: #46515a;
+}
+
+.badge.zavrsen {
+  background: #e8ecef;
+  color: #52616b;
 }
 
 .mobile-nav {

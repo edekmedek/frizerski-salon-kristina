@@ -30,5 +30,6 @@ describe('pravila cjenika', () => {
   it('ne mijenja status Zakazan u Potvrđeno', () => {
     expect(appointmentStatusLabel('zakazan')).toBe('Zakazan')
     expect(appointmentStatusLabel('otkazan')).toBe('Otkazano')
+    expect(appointmentStatusLabel('zavrsen')).toBe('Završen')
   })
 })

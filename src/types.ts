@@ -1,4 +1,4 @@
-export type AppointmentStatus = 'zakazan' | 'otkazan'
+export type AppointmentStatus = 'zakazan' | 'otkazan' | 'zavrsen'
 
 export interface ImageAsset {
   full: string
