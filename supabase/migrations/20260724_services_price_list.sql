@@ -1,3 +1,4 @@
+-- UTF-8 source: use Get-Content -Raw -Encoding UTF8 when copying in Windows PowerShell 5.1.
 -- Additive price-list migration based on "cjenik kristina.xlsx", valid 2026-01-01.
 -- Durations intentionally remain NULL until entered by the administrator.
 

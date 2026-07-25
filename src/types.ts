@@ -26,6 +26,7 @@ export interface Appointment {
   serviceCategoryId?: string
   servicePrice?: number
   serviceDuration?: number
+  treatments?: AppointmentTreatment[]
   noCharge?: boolean
   status: AppointmentStatus
   note: string
@@ -53,6 +54,13 @@ export interface HairstyleArchiveEntry {
   note: string
   createdAt: string
   visibleToClient?: boolean
+}
+
+export interface AppointmentTreatment {
+  serviceId: string
+  name: string
+  price: number
+  durationMinutes?: number
 }
 
 export interface Service {
