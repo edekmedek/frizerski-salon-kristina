@@ -332,6 +332,24 @@
   font-size: 24px;
 }
 
+.past-access {
+  width: 44px;
+  min-width: 44px;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #a99a93;
+  font-size: 14px;
+}
+
+.past-access:hover,
+.past-access:focus-visible {
+  border-color: var(--line);
+  background: #f7f1ed;
+  color: var(--wine);
+}
+
 .today-button {
   padding: 8px 13px;
 }
@@ -461,7 +479,22 @@
 }
 
 .mobile-nav {
-  grid-template-columns: repeat(7, 1fr) !important;
+  grid-template-columns: repeat(8, 1fr) !important;
+}
+
+.settings-panel {
+  width: min(640px, 100%);
+}
+
+.settings-panel > p {
+  max-width: 56ch;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.admin-pin-form input {
+  min-height: 44px;
+  font-size: 16px;
 }
 
 @media (max-width: 700px) {
