@@ -3,22 +3,60 @@
 
 begin;
 
+with desired_categories (code, name, is_active, display_order) as (
+  values
+    ('dodaci', 'Dodaci', true, 1),
+    ('bojanje', 'Bojanje', true, 2),
+    ('frizura', 'Frizura', true, 3),
+    ('pranje', 'Pranje', true, 4),
+    ('sisanje', 'Šišanje', true, 5),
+    ('joico', 'Joico', true, 6),
+    ('neaktivno', 'Artilki i usluge koji se ne koriste', false, 7)
+)
 insert into public.service_categories (code, name, is_active, display_order)
-values
-  ('dodaci', 'Dodaci', true, 1),
-  ('bojanje', 'Bojanje', true, 2),
-  ('frizura', 'Frizura', true, 3),
-  ('pranje', 'Pranje', true, 4),
-  ('sisanje', 'Šišanje', true, 5),
-  ('joico', 'Joico', true, 6),
-  ('neaktivno', 'Artilki i usluge koji se ne koriste', false, 7)
+select desired.code, desired.name, desired.is_active, desired.display_order
+from desired_categories desired
+where not exists (
+  select 1
+  from public.service_categories existing
+  where existing.code = desired.code
+     or lower(btrim(existing.name)) = lower(btrim(desired.name))
+)
 on conflict (code) do update
 set name = excluded.name,
     is_active = excluded.is_active,
     display_order = excluded.display_order,
     updated_at = now();
 
-with imported_services (
+with desired_categories (code, name, is_active, display_order) as (
+  values
+    ('dodaci', 'Dodaci', true, 1),
+    ('bojanje', 'Bojanje', true, 2),
+    ('frizura', 'Frizura', true, 3),
+    ('pranje', 'Pranje', true, 4),
+    ('sisanje', 'Šišanje', true, 5),
+    ('joico', 'Joico', true, 6),
+    ('neaktivno', 'Artilki i usluge koji se ne koriste', false, 7)
+)
+update public.service_categories existing
+set is_active = desired.is_active,
+    display_order = desired.display_order,
+    updated_at = now()
+from desired_categories desired
+where existing.code = desired.code
+   or lower(btrim(existing.name)) = lower(btrim(desired.name));
+
+with desired_categories (code, name) as (
+  values
+    ('dodaci', 'Dodaci'),
+    ('bojanje', 'Bojanje'),
+    ('frizura', 'Frizura'),
+    ('pranje', 'Pranje'),
+    ('sisanje', 'Šišanje'),
+    ('joico', 'Joico'),
+    ('neaktivno', 'Artilki i usluge koji se ne koriste')
+),
+imported_services (
   source_code, category_code, name, price, duration_minutes, is_active, display_order
 ) as (
 values
@@ -169,7 +207,15 @@ select imported.source_code,
        coalesce(existing.is_bookable, true),
        imported.display_order
 from imported_services imported
-join public.service_categories category on category.code = imported.category_code
+join desired_categories desired on desired.code = imported.category_code
+join lateral (
+  select matched.id
+  from public.service_categories matched
+  where matched.code = imported.category_code
+     or lower(btrim(matched.name)) = lower(btrim(desired.name))
+  order by case when matched.code = imported.category_code then 0 else 1 end
+  limit 1
+) category on true
 left join public.services existing on existing.source_code = imported.source_code
 on conflict (source_code) do update
 set category_id = excluded.category_id,
