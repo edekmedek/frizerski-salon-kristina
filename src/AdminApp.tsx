@@ -22,7 +22,7 @@ import { calendarDateAfterMove, canOpenMainCalendarDate, isArchivedAppointment }
 import { createEmptyAdminPinFields, isValidAdminPin, isValidCurrentAdminPin } from './lib/adminPin'
 import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, normalizeAppointmentTreatmentTotals, removeTreatmentPreservingOverrides, treatmentTotals } from './lib/appointmentTreatments'
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
-import { adminInboxCounts, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
+import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import './Portal.css'
@@ -149,7 +149,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [selectedAdminMessage, setSelectedAdminMessage] = useState<AdminMessage>()
   const [inboxBusy, setInboxBusy] = useState(false)
   const requestDraftDayChangeRef = useRef(0)
-  const knownAdminRequestIdsRef = useRef<Set<string>>(new Set())
+  const knownAdminRequestVersionsRef = useRef<Map<string, string>>(new Map())
   const knownAdminMessageIdsRef = useRef<Set<string>>(new Set())
   const adminInboxInitializedRef = useRef(false)
   const clientSavingRef = useRef(false)
@@ -426,6 +426,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     })
     setInboxBusy(false)
     if (error) { setNotice('Prijedlog termina nije poslan. Provjerite je li nova Supabase migracija primijenjena.'); return }
+    void sendClientPush(
+      selectedAdminRequest.clientId,
+      'Novi prijedlog termina',
+      proposal,
+      `appointment-proposal-${selectedAdminRequest.id}`,
+    )
     await loadAdminInbox()
     setSelectedAdminRequest(undefined)
     setRequestDraftTime('')
@@ -559,16 +565,14 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     const nextRequests = mapAdminRequests(requestResult.data ?? [])
     const nextMessages = mapAdminMessages(messageResult.data ?? [])
     if (notifyAboutNewRequests && adminInboxInitializedRef.current) {
-      const hasNewRequest = nextRequests.some(item =>
-        item.status === 'pending'
-        && !knownAdminRequestIdsRef.current.has(item.id))
+      const hasNewRequest = hasNewUnreadAdminRequest(nextRequests, knownAdminRequestVersionsRef.current)
       const hasNewClientMessage = nextMessages.some(item =>
         item.sender === 'client'
         && !item.read
         && !knownAdminMessageIdsRef.current.has(item.id))
       if (hasNewRequest || hasNewClientMessage) playNewRequestSound()
     }
-    knownAdminRequestIdsRef.current = new Set(nextRequests.map(item => item.id))
+    knownAdminRequestVersionsRef.current = new Map(nextRequests.map(item => [item.id, adminRequestNotificationVersion(item)]))
     knownAdminMessageIdsRef.current = new Set(nextMessages.map(item => item.id))
     adminInboxInitializedRef.current = true
     setAdminRequests(nextRequests)
@@ -1088,6 +1092,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     setNotice(item.visibleToClient ? 'Fotografije su skrivene od klijenta.' : 'Fotografije su vidljive klijentu.')
   }
   const inboxCounts = adminInboxCounts(adminRequests, adminMessages)
+  useEffect(() => {
+    const badgeNavigator = navigator as Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
+    const total = inboxCounts.requests + inboxCounts.messages
+    if (total > 0) void badgeNavigator.setAppBadge?.(total)
+    else void badgeNavigator.clearAppBadge?.()
+  }, [inboxCounts.requests, inboxCounts.messages])
   const title = view === 'arhiva-termina' ? 'Arhiva termina' : nav.find(item => item.id === view)?.label
   const todayCalendarDate = localDateString(new Date())
   const viewingToday = selectedCalendarDate === todayCalendarDate

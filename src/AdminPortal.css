@@ -298,6 +298,19 @@
   gap: 12px;
 }
 
+.nav-count {
+  animation: unread-count-glow 1.25s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(255, 190, 158, .55);
+}
+
+@keyframes unread-count-glow {
+  50% {
+    background: #d75545;
+    box-shadow: 0 0 0 6px rgba(255, 190, 158, 0);
+    transform: scale(1.08);
+  }
+}
+
 .client-request-status {
   display: grid;
   gap: 8px;

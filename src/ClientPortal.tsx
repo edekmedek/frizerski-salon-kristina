@@ -47,11 +47,15 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     return Notification.permission === 'denied' ? 'denied' : 'available'
   })
   const knownMessageIdsRef = useRef<Set<string>>(new Set())
+  const knownRequestVersionsRef = useRef<Map<string, string>>(new Map())
   const messagesInitializedRef = useRef(false)
   const [portalNow] = useState(() => Date.now())
   const upcoming = useMemo(() => appointments.filter(item => item.status === 'confirmed' && new Date(item.starts_at).getTime() >= portalNow).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)), [appointments, portalNow])
   const visibleRequests = useMemo(() => requests.filter(item => item.status !== 'confirmed'), [requests])
-  const inboxCount = useMemo(() => messages.filter(item=>item.sender==='admin' && !item.client_read_at).length, [messages])
+  const inboxCount = useMemo(() =>
+    messages.filter(item=>item.sender==='admin' && !item.client_read_at).length
+    + requests.filter(item=>item.status==='in_review').length,
+  [messages, requests])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -149,7 +153,9 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       if (!active) return
       setClient(clientResult.data as ClientRow | null)
       setAppointments((appointmentResult.data ?? []) as AppointmentRow[])
-      setRequests((requestResult.data ?? []) as RequestRow[])
+      const initialRequests = (requestResult.data ?? []) as RequestRow[]
+      setRequests(initialRequests)
+      knownRequestVersionsRef.current = new Map(initialRequests.map(item => [item.id, `${item.updated_at}|${item.status}|${item.admin_reply}`]))
       setMessages((messageResult.data ?? []) as MessageRow[])
       knownMessageIdsRef.current = new Set((messageResult.data ?? []).map(item => item.id))
       messagesInitializedRef.current = true
@@ -173,7 +179,18 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         supabase.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status').eq('client_id', clientId),
         supabase.from('messages').select('id,sender,subject,message,is_read,read_at,client_read_at,created_at').eq('client_id', clientId).eq('deleted_by_client', false).order('created_at', { ascending: false }),
       ])
-      if (!requestResult.error) setRequests((requestResult.data ?? []) as RequestRow[])
+      if (!requestResult.error) {
+        const nextRequests = (requestResult.data ?? []) as RequestRow[]
+        const hasNewProposal = nextRequests.some(item =>
+          item.status === 'in_review'
+          && knownRequestVersionsRef.current.get(item.id) !== `${item.updated_at}|${item.status}|${item.admin_reply}`)
+        knownRequestVersionsRef.current = new Map(nextRequests.map(item => [item.id, `${item.updated_at}|${item.status}|${item.admin_reply}`]))
+        setRequests(nextRequests)
+        if (hasNewProposal) {
+          playNewMessageSound()
+          setNotice('Stigao je novi prijedlog termina. Otvorite zahtjev i odgovorite Kristini.')
+        }
+      }
       if (!appointmentResult.error) setAppointments((appointmentResult.data ?? []) as AppointmentRow[])
       if (!messageResult.error) {
         const nextMessages = (messageResult.data ?? []) as MessageRow[]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminInboxCounts, mapAdminMessages, mapAdminRequests, requestStatusLabel } from './adminInbox'
+import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, requestStatusLabel } from './adminInbox'
 
 describe('Supabase administratorski inbox', () => {
   const requests = mapAdminRequests([
@@ -50,5 +50,13 @@ describe('Supabase administratorski inbox', () => {
     }])
     expect(message.read).toBe(false)
     expect(adminInboxCounts([], [message]).messages).toBe(0)
+  })
+
+  it('broji nepročitanu potvrdu termina i ponovno upozorava kad se postojeći zahtjev promijeni', () => {
+    const confirmed = { ...requests[0], status: 'confirmed' as const, clientReply: 'Termin je potvrđen.', updatedAt: '2026-07-25T14:00:00Z' }
+    expect(adminInboxCounts([confirmed], []).requests).toBe(1)
+    const oldVersions = new Map([[confirmed.id, '2026-07-25T13:00:00Z|in_review|']])
+    expect(hasNewUnreadAdminRequest([confirmed], oldVersions)).toBe(true)
+    expect(hasNewUnreadAdminRequest([confirmed], new Map([[confirmed.id, adminRequestNotificationVersion(confirmed)]]))).toBe(false)
   })
 })

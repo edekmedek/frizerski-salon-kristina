@@ -118,9 +118,20 @@ export function mapAdminMessages(rows: MessageRow[]): AdminMessage[] {
 
 export function adminInboxCounts(requests: AdminRequest[], messages: AdminMessage[]) {
   return {
-    requests: requests.filter(item => item.status === 'pending' && !item.readAt).length,
+    requests: requests.filter(item => !item.readAt).length,
     messages: messages.filter(item => item.sender === 'client' && !item.read && !item.archivedAt).length,
   }
+}
+
+export function adminRequestNotificationVersion(request: AdminRequest) {
+  return `${request.updatedAt}|${request.status}|${request.clientReply ?? ''}`
+}
+
+export function hasNewUnreadAdminRequest(requests: AdminRequest[], knownVersions: Map<string, string>) {
+  return requests.some(request =>
+    !request.readAt
+    && knownVersions.get(request.id) !== adminRequestNotificationVersion(request),
+  )
 }
 
 export function requestStatusLabel(status: AdminRequest['status']) {
