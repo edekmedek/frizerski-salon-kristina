@@ -152,7 +152,12 @@ async function encodeWithinPrivateLimit(
   throw new Error('Fotografiju nije moguće smanjiti ispod privatnog ograničenja od 5 MB.')
 }
 
-export async function compressImageToAsset(file: File): Promise<ImageAsset> {
+export interface CompressedImageBlobs {
+  full: Blob
+  thumb: Blob
+}
+
+export async function compressImageToBlobs(file: File): Promise<CompressedImageBlobs> {
   const loaded = await loadOrientedImage(file)
   try {
     const [fullBlob, thumbBlob] = await Promise.all([
@@ -162,14 +167,19 @@ export async function compressImageToAsset(file: File): Promise<ImageAsset> {
         0.78,
       ),
     ])
-    const [full, thumb] = await Promise.all([
-      blobToDataUrl(fullBlob),
-      blobToDataUrl(thumbBlob),
-    ])
-    return { full, thumb }
+    return { full: fullBlob, thumb: thumbBlob }
   } finally {
     loaded.cleanup()
   }
+}
+
+export async function compressImageToAsset(file: File): Promise<ImageAsset> {
+  const { full: fullBlob, thumb: thumbBlob } = await compressImageToBlobs(file)
+  const [full, thumb] = await Promise.all([
+      blobToDataUrl(fullBlob),
+      blobToDataUrl(thumbBlob),
+    ])
+  return { full, thumb }
 }
 
 export function createMonogramImage(

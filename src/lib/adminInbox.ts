@@ -10,8 +10,12 @@ export interface AdminRequest {
   message: string
   status: 'pending' | 'in_review' | 'confirmed' | 'rejected'
   adminReply: string
+  clientReply?: string
+  proposedStartsAt?: string
+  proposedDurationMinutes?: number
   appointmentId?: string
   readAt?: string
+  clientReadAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -26,6 +30,7 @@ export interface AdminMessage {
   message: string
   read: boolean
   readAt?: string
+  clientReadAt?: string
   archivedAt?: string
   parentMessageId?: string
   createdAt: string
@@ -44,6 +49,9 @@ interface RequestRow {
   client_message: string | null
   status: AdminRequest['status']
   admin_reply: string | null
+  client_reply?: string | null
+  proposed_starts_at?: string | null
+  proposed_duration_minutes?: number | null
   appointment_id: string | null
   admin_read_at: string | null
   created_at: string
@@ -61,6 +69,7 @@ interface MessageRow {
   message: string
   is_read: boolean
   read_at: string | null
+  client_read_at?: string | null
   archived_at: string | null
   parent_message_id: string | null
   created_at: string
@@ -79,6 +88,9 @@ export function mapAdminRequests(rows: RequestRow[]): AdminRequest[] {
     message: row.client_message ?? '',
     status: row.status,
     adminReply: row.admin_reply ?? '',
+    clientReply: row.client_reply ?? '',
+    proposedStartsAt: row.proposed_starts_at ?? undefined,
+    proposedDurationMinutes: row.proposed_duration_minutes ?? undefined,
     appointmentId: row.appointment_id ?? undefined,
     readAt: row.admin_read_at ?? undefined,
     createdAt: row.created_at,
@@ -97,6 +109,7 @@ export function mapAdminMessages(rows: MessageRow[]): AdminMessage[] {
     message: row.message,
     read: row.is_read,
     readAt: row.read_at ?? undefined,
+    clientReadAt: row.client_read_at ?? undefined,
     archivedAt: row.archived_at ?? undefined,
     parentMessageId: row.parent_message_id ?? undefined,
     createdAt: row.created_at,

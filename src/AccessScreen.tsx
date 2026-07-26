@@ -11,10 +11,10 @@ interface LoginResult {
   authenticated: boolean
 }
 
-async function ensureAnonymousSession() {
+async function ensureAnonymousSession(forceNew = false) {
   if (!supabase) throw new Error('Supabase nije konfiguriran.')
   const { data: current } = await supabase.auth.getSession()
-  if (current.session?.user.is_anonymous) return current.session
+  if (!forceNew && current.session?.user.is_anonymous) return current.session
   if (current.session) await supabase.auth.signOut()
   const { data, error } = await supabase.auth.signInAnonymously()
   if (error || !data.session) throw error ?? new Error('Anonimna sesija nije dostupna.')
@@ -26,7 +26,7 @@ export function AccessScreen() {
     const match = window.location.hash.match(/^#\/client\/access\/([a-f0-9]+)$/i)
     return match?.[1] ?? ''
   }, [])
-  const [mode, setMode] = useState<AccessMode>(accessToken ? 'activate' : 'home')
+  const [mode, setMode] = useState<AccessMode>(accessToken ? 'client' : 'home')
   const [phone, setPhone] = useState('')
   const [pin, setPin] = useState('')
   const [pinConfirm, setPinConfirm] = useState('')
@@ -83,7 +83,7 @@ export function AccessScreen() {
     setWorking(true)
     setMessage('')
     try {
-      await ensureAnonymousSession()
+      await ensureAnonymousSession(true)
       const { data, error } = await supabase.rpc('activate_client_portal', {
         access_token: accessToken,
         phone_value: phone,
@@ -108,7 +108,7 @@ export function AccessScreen() {
     setWorking(true)
     setMessage('')
     try {
-      await ensureAnonymousSession()
+      await ensureAnonymousSession(true)
       const { data, error } = await supabase.rpc('login_client_portal', {
         phone_value: phone,
         pin_value: pin,
@@ -127,8 +127,11 @@ export function AccessScreen() {
         return
       }
       setPortalSession({ role: 'client', clientId: result.client_id })
-    } catch {
-      setMessage('Pristupni podaci nisu ispravni ili je pristup privremeno blokiran.')
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : ''
+      setMessage(detail
+        ? `Prijava nije uspjela: ${detail}`
+        : 'Pristupni podaci nisu ispravni ili je pristup privremeno blokiran.')
     } finally {
       setWorking(false)
     }
@@ -145,6 +148,14 @@ export function AccessScreen() {
         new_permanent_pin: pin,
       })
       if (error) throw error
+      const verification = await supabase.rpc('login_client_portal', {
+        phone_value: phone,
+        pin_value: pin,
+      })
+      const verified = (verification.data as LoginResult[] | null)?.[0]
+      if (verification.error || !verified?.authenticated || verified.client_id !== clientId) {
+        throw verification.error ?? new Error('Novi PIN nije potvrđen.')
+      }
       setTemporaryPin('')
       setPortalSession({ role: 'client', clientId })
     } catch {

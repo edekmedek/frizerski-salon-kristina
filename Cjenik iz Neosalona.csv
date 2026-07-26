@@ -1,0 +1,135 @@
+﻿Naziv;Tip;Cijena (€);PDV (%) ;Interna šifra;Grupa ;Trajanje (min)
+Botox 1;Usluga;60;Bez PDV-a;14;Dodaci;90
+Botox 2;Usluga;70;Bez PDV-a;15;Dodaci;110
+Botox 3;Usluga;80;Bez PDV-a;16;Dodaci;120
+Botox 4;Usluga;90;Bez PDV-a;17;Dodaci;130
+Botox 5;Usluga;100;Bez PDV-a;18;Dodaci;150
+Keratin 1;Usluga;70;Bez PDV-a;22;Dodaci;120
+Keratin 2;Usluga;90;Bez PDV-a;23;Dodaci;150
+Keratin 3;Usluga;110;Bez PDV-a;24;Dodaci;180
+Keratin 4;Usluga;130;Bez PDV-a;25;Dodaci;210
+keratin 5;Usluga;150;Bez PDV-a;26;Dodaci;240
+Keratin 6;Usluga;170;Bez PDV-a;27;Dodaci;270
+Keratin 7;Usluga;190;Bez PDV-a;28;Dodaci;300
+Olaplex;Usluga;2;Bez PDV-a;132;Dodaci;20
+Predpigmentacija M;Usluga;5;Bez PDV-a;133;Dodaci;20
+Predpigmentacija L;Usluga;10;Bez PDV-a;134;Dodaci;20
+Bojanje duge kose 1;Usluga;45;Bez PDV-a;3;Bojanje;
+Bojanje i pramenovi duga kosa 1;Usluga;55;Bez PDV-a;4;Bojanje;
+Bojanje i pramenovi srednja kosa 1;Usluga;36;Bez PDV-a;5;Bojanje;
+Bojanje kratke kose 1;Usluga;30;Bez PDV-a;6;Bojanje;
+Bojanje srednje kose 1;Usluga;36;Bez PDV-a;7;Bojanje;
+Bojanje duge kose bez šišanja;Usluga;36;Bez PDV-a;8;Bojanje;
+Bojanje i pramenovi kratka kosa 1;Usluga;35;Bez PDV-a;9;Bojanje;
+Bojanje kratke kose bez šišanja;Usluga;22;Bez PDV-a;10;Bojanje;
+Bojanje srednje kose bez šišanja;Usluga;28;Bez PDV-a;12;Bojanje;
+Balayage kratka kosa;Usluga;34;Bez PDV-a;33;Bojanje;
+Balayage srednja kosa 1;Usluga;43;Bez PDV-a;34;Bojanje;
+Balayage duga kosa 1;Usluga;58;Bez PDV-a;35;Bojanje;
+Pramenovi kratka kosa 1;Usluga;30;Bez PDV-a;36;Bojanje;
+Pramenovi srednja kosa 1;Usluga;38;Bez PDV-a;37;Bojanje;
+Pramenovi duga kosa 1;Usluga;50;Bez PDV-a;38;Bojanje;
+Pramenovi maska toner;Usluga;45;Bez PDV-a;39;Bojanje;
+Toner duga kosa;Usluga;20;Bez PDV-a;60;Bojanje;
+Toner srednja kosa;Usluga;15;Bez PDV-a;61;Bojanje;
+Toner kratka kosa;Usluga;12;Bez PDV-a;62;Bojanje;
+Every green boja kratka kosa;Usluga;10;Bez PDV-a;67;Bojanje;
+Every green boja srednja kosa;Usluga;12;Bez PDV-a;68;Bojanje;
+Every green boja duga kosa;Usluga;18;Bez PDV-a;69;Bojanje;
+Bojanje duge kose 2;Usluga;50;Bez PDV-a;79;Bojanje;
+Bojanje duge kose 3;Usluga;60;Bez PDV-a;80;Bojanje;
+Bojanje i pramenovi duga kosa 2;Usluga;65;Bez PDV-a;81;Bojanje;
+Bojanje i pramenovi duga kosa 3;Usluga;75;Bez PDV-a;82;Bojanje;
+Bojanje i pramenovi srednja kosa 2;Usluga;40;Bez PDV-a;84;Bojanje;
+Bojanje kratke kose 2;Usluga;35;Bez PDV-a;83;Bojanje;
+Bojanje srednje kose 2;Usluga;40;Bez PDV-a;85;Bojanje;
+Bojanje srednje kose 3;Usluga;43;Bez PDV-a;86;Bojanje;
+Bojanje i pramenovi kratka kosa 2;Usluga;38;Bez PDV-a;87;Bojanje;
+Balayage srednja kosa 2;Usluga;50;Bez PDV-a;91;Bojanje;
+Balayage duga kosa 2;Usluga;70;Bez PDV-a;92;Bojanje;
+Pramenovi kratka kosa 2;Usluga;35;Bez PDV-a;93;Bojanje;
+Pramenovi srednja kosa 2;Usluga;42;Bez PDV-a;94;Bojanje;
+Pramenovi duga kosa 2;Usluga;60;Bez PDV-a;95;Bojanje;
+Minival srednja kosa;Usluga;55;Bez PDV-a;30;Frizura;150
+Minival kratka kosa;Usluga;45;Bez PDV-a;31;Frizura;120
+Minival duga kosa;Usluga;85;Bez PDV-a;32;Frizura;180
+Svečana frizura duga kosa;Usluga;50;Bez PDV-a;47;Frizura;120
+Svečana frizura srednja kosa;Usluga;30;Bez PDV-a;48;Frizura;90
+Svečana frizura kratka kosa;Usluga;25;Bez PDV-a;49;Frizura;60
+Vjenčana frizura duga kosa;Usluga;70;Bez PDV-a;63;Frizura;120
+Vjenčana frizura srednja kosa;Usluga;60;Bez PDV-a;64;Frizura;90
+Vjenčana frizura kratka kosa;Usluga;50;Bez PDV-a;65;Frizura;60
+Češljanje;Usluga;4;Bez PDV-a;66;Frizura;10
+Frizura S;Usluga;15;Bez PDV-a;116;Frizura;30
+Frizura M;Usluga;17;Bez PDV-a;117;Frizura;40
+Frizura L;Usluga;19;Bez PDV-a;118;Frizura;50
+Frizura XL;Usluga;21;Bez PDV-a;119;Frizura;60
+Frizura XXL;Usluga;25;Bez PDV-a;120;Frizura;90
+Frizura XS;Usluga;13;Bez PDV-a;130;Frizura;20
+Pranje kose;Usluga;5;Bez PDV-a;40;Pranje;5
+Šišanje i oblikovanje;Usluga;15;Bez PDV-a;54;Šišanje;30
+Šišanje i pranje kose;Usluga;14;Bez PDV-a;55;Šišanje;30
+Šišanje kose;Usluga;10;Bez PDV-a;56;Šišanje;30
+Šišanje kose mašinica;Usluga;7;Bez PDV-a;57;Šišanje;20
+Šišanje šiški;Usluga;4;Bez PDV-a;58;Šišanje;10
+Šišanje pranje i oblikovanje;Usluga;18;Bez PDV-a;59;Šišanje;30
+Šišanje i frizura S;Usluga;21;Bez PDV-a;121;Šišanje;30
+Šišanje i frizura M;Usluga;23;Bez PDV-a;122;Šišanje;40
+Šišanje i frizura L;Usluga;25;Bez PDV-a;123;Šišanje;50
+Šišanje i frizura XL;Usluga;27;Bez PDV-a;124;Šišanje;80
+Šišanje i frizura uz bojenje S;Usluga;18;Bez PDV-a;126;Šišanje;30
+Šišanje i frizura uz bojenje M;Usluga;20;Bez PDV-a;127;Šišanje;40
+Šišanje i frizura uz bojenje L;Usluga;22;Bez PDV-a;128;Šišanje;50
+Šišanje i frizura XXL;Usluga;30;Bez PDV-a;125;Šišanje;120
+Šišanje i frizura XS;Usluga;20;Bez PDV-a;131;Šišanje;30
+Aplikacija boje;Usluga;5;Bez PDV-a;2;Joico;10
+Bojanje obrva;Usluga;3;Bez PDV-a;11;Joico;10
+Bojanje trepavica;Usluga;4;Bez PDV-a;13;Joico;20
+Defy Damage tretman 1;Usluga;4;Bez PDV-a;103;Joico;10
+Defy Damage tretman 2;Usluga;5;Bez PDV-a;104;Joico;10
+K-pack reconstructor 1;Usluga;18;Bez PDV-a;105;Joico;40
+K-pack reconstructor 2;Usluga;20;Bez PDV-a;106;Joico;50
+K-pack reconstructor 3;Usluga;23;Bez PDV-a;107;Joico;60
+Lumishine boja 10 g;Usluga;6,5;Bez PDV-a;108;Joico;10
+Liquid toner 10 g;Usluga;6,5;Bez PDV-a;109;Joico;10
+Demi dimensional 10g;Usluga;6;Bez PDV-a;110;Joico;10
+Blond life blanš 10 g;Usluga;5,5;Bez PDV-a;111;Joico;90
+Vero light blanš 10g;Usluga;5,5;Bez PDV-a;112;Joico;90
+Intensity 10g;Usluga;5;Bez PDV-a;113;Joico;10
+Vero-K 10g;Usluga;6,5;Bez PDV-a;114;Joico;10
+10 min boja 10 g;Usluga;6,5;Bez PDV-a;115;Joico;10
+Defy Damage tretman 3;Usluga;4,5;Bez PDV-a;129;Joico;10
+Ampula;Usluga;2,65;Bez PDV-a;1;Artilki i usluge koji se ne koriste;
+Frizura kratka kosa 1;Usluga;12;Bez PDV-a;19;Artilki i usluge koji se ne koriste;
+Frizura srednja kosa 1;Usluga;13;Bez PDV-a;20;Artilki i usluge koji se ne koriste;
+Frizura duga kosa 1;Usluga;16;Bez PDV-a;21;Artilki i usluge koji se ne koriste;
+Maska ili pakung;Usluga;3;Bez PDV-a;29;Artilki i usluge koji se ne koriste;
+Probna frizura duga kosa;Usluga;20;Bez PDV-a;41;Artilki i usluge koji se ne koriste;
+Probna frizura srednja kosa;Usluga;16;Bez PDV-a;42;Artilki i usluge koji se ne koriste;
+Probna frizura kratka kosa;Usluga;14;Bez PDV-a;43;Artilki i usluge koji se ne koriste;
+Ravnanje duge kose gelom;Usluga;20;Bez PDV-a;44;Artilki i usluge koji se ne koriste;
+Ravnanje srednje kose gelom;Usluga;16;Bez PDV-a;45;Artilki i usluge koji se ne koriste;
+Ravnanje kratke kose gelom;Usluga;14;Bez PDV-a;46;Artilki i usluge koji se ne koriste;
+Šišanje i frizura duga kosa 1;Usluga;22;Bez PDV-a;50;Artilki i usluge koji se ne koriste;
+Šišanje i frizura srednja kosa 1;Usluga;18;Bez PDV-a;51;Artilki i usluge koji se ne koriste;
+Šišanje i frizura kratka kosa 1;Usluga;16;Bez PDV-a;52;Artilki i usluge koji se ne koriste;
+Šišanje i frizura bez pranja;Usluga;12;Bez PDV-a;53;Artilki i usluge koji se ne koriste;
+10-min boja 1;Usluga;6,64;Bez PDV-a;70;Artilki i usluge koji se ne koriste;
+10-min boja 2;Usluga;9,29;Bez PDV-a;71;Artilki i usluge koji se ne koriste;
+10-min boja 3;Usluga;11,95;Bez PDV-a;72;Artilki i usluge koji se ne koriste;
+10-min boja 4;Usluga;14,6;Bez PDV-a;73;Artilki i usluge koji se ne koriste;
+10-min boja 5;Usluga;17,25;Bez PDV-a;74;Artilki i usluge koji se ne koriste;
+10-min boja 6;Usluga;19,91;Bez PDV-a;75;Artilki i usluge koji se ne koriste;
+10-min boja 7;Usluga;26,54;Bez PDV-a;76;Artilki i usluge koji se ne koriste;
+Botol-up 1;Usluga;7,96;Bez PDV-a;77;Artilki i usluge koji se ne koriste;
+Botol-up 2;Usluga;15,93;Bez PDV-a;78;Artilki i usluge koji se ne koriste;
+Frizura kratka kosa 2;Usluga;13;Bez PDV-a;88;Artilki i usluge koji se ne koriste;
+Frizura srednja kosa 2;Usluga;15;Bez PDV-a;89;Artilki i usluge koji se ne koriste;
+Frizura duga kosa 2;Usluga;17;Bez PDV-a;90;Artilki i usluge koji se ne koriste;
+Svečana frizura srednja kosa 2;Usluga;30;Bez PDV-a;96;Artilki i usluge koji se ne koriste;
+Šišanje i frizura duga kosa 2;Usluga;24;Bez PDV-a;97;Artilki i usluge koji se ne koriste;
+Šišanje i frizura srednja kosa 2;Usluga;20;Bez PDV-a;98;Artilki i usluge koji se ne koriste;
+Šišanje i frizura kratka kosa 2;Usluga;18;Bez PDV-a;99;Artilki i usluge koji se ne koriste;
+Laminacija kose - kratka kosa;Usluga;7;Bez PDV-a;100;Artilki i usluge koji se ne koriste;
+Laminacija kose - srednja kosa;Usluga;11;Bez PDV-a;101;Artilki i usluge koji se ne koriste;
+Laminacija kose - duga kosa;Usluga;14;Bez PDV-a;102;Artilki i usluge koji se ne koriste;

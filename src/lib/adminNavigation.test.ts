@@ -8,4 +8,22 @@ describe('administratorska navigacija', () => {
     expect(source).not.toContain("id: 'termini'")
     expect(source).not.toContain("view === 'termini'")
   })
+
+  it('nakon otvaranja zahtjeva prikazuje kalendar prvog traženog dana', () => {
+    const source = readFileSync(join(process.cwd(), 'src', 'AdminApp.tsx'), 'utf8')
+    expect(source).toContain('const requestedDate = request.preferredDates[0]')
+    expect(source).toContain('await requestCalendarDate(requestedDate)')
+    expect(source).toContain("setView('pregled')")
+  })
+
+  it('prikazuje zahtjev kao pomični blok proporcionalan trajanju i dopušta preklapanje', () => {
+    const source = readFileSync(join(process.cwd(), 'src', 'AdminApp.tsx'), 'utf8')
+    expect(source).toContain('request-draft-event')
+    expect(source).toContain('requestDraftLayout.heightPercent')
+    expect(source).toContain('onPointerMove=')
+    expect(source).toContain('requestDraftConflicts.length')
+    expect(source).toContain('sendSelectedRequestProposal')
+    expect(source).toContain('Pošalji prijedlog termina')
+    expect(source).toContain('item.serviceDuration')
+  })
 })

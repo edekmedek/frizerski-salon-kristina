@@ -28,6 +28,7 @@ export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, 
         <div><dt>Telefon</dt><dd>{selected.clientPhone}</dd></div>
       </dl>
       <article className="full-message"><strong>Napomena klijenta</strong><p>{selected.message || 'Bez dodatne napomene.'}</p></article>
+      {selected.clientReply && <article className="full-message"><strong>Odgovor klijenta na prijedlog</strong><p>{selected.clientReply}</p></article>}
       {selected.adminReply && <article className="admin-reply"><strong>Kristinin odgovor</strong><p>{selected.adminReply}</p></article>}
       {(selected.status === 'pending' || selected.status === 'in_review') && <div className="request-detail-actions">
         {selected.kind === 'appointment' && <button className="primary" disabled={busy} onClick={() => onAccept(selected)}>Prihvati i odaberi termin</button>}
@@ -45,7 +46,7 @@ export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, 
 
   return <section className="panel">
     <div className="panel-head"><div><p className="eyebrow">KLIJENTSKI PORTAL</p><h2>Zahtjevi klijenata</h2></div><span className="request-count">{pending.length} otvorenih</span></div>
-    <div className="request-inbox">{requests.length ? requests.map(request =>
+    <div className="request-inbox">{pending.length ? pending.map(request =>
       <button type="button" key={request.id} className={`request-card inbox-row ${request.readAt ? '' : 'unread'}`} onClick={() => void onOpen(request)}>
         <div className="request-card-head"><div><strong>{request.clientName}</strong><small>{formatDateTime(request.createdAt)}</small></div><span>{requestStatusLabel(request.status)}</span></div>
         <p><b>{request.service || (request.kind === 'change' ? 'Zahtjev za promjenu' : 'Zahtjev za otkazivanje')}</b></p>
