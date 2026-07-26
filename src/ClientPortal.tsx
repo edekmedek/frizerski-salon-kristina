@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDate, formatDateTime } from './lib/date'
 import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
+import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
 import './Portal.css'
 
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos'
@@ -67,11 +68,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
 
   async function enablePushNotifications() {
     if (!supabase || pushState === 'working') return
-    const publicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY
-    if (!publicKey) {
-      setNotice('Push obavijesti nisu konfigurirane.')
-      return
-    }
+    const publicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || SALON_VAPID_PUBLIC_KEY
     setPushState('working')
     try {
       const permission = await Notification.requestPermission()
@@ -95,9 +92,9 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       if (error) throw error
       setPushState('enabled')
       setNotice('Obavijesti su uključene i mogu stizati kada je aplikacija zatvorena.')
-    } catch {
-      setPushState('available')
-      setNotice('Obavijesti nije moguće uključiti na ovom uređaju.')
+    } catch (error) {
+      setPushState(Notification.permission === 'denied' ? 'denied' : 'available')
+      setNotice(pushErrorMessage(error))
     }
   }
 
