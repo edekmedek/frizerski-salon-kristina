@@ -242,9 +242,40 @@ export function AccessScreen() {
     }
   }
 
-  return <main className="access-page"><section className="access-card">
+  return <main className={`access-page${mode === 'home' ? ' salon-home-page' : ''}`}><section className={`access-card${mode === 'home' ? ' salon-home' : ''}`}>
     <div className="portal-brand"><span>K</span><div><strong>Salon Kristina</strong><small>Topla elegancija</small></div></div>
-    {mode === 'home' && <><p className="eyebrow">DOBRO DOŠLI</p><h1>Odaberite ulaz</h1><p className="access-intro">Klijentski portal i Kristinin administratorski prostor potpuno su odvojeni.</p><div className="access-choices"><button className="primary" onClick={() => setMode('client')}>Ulaz za klijente</button><button className="secondary" onClick={() => setMode('admin')}>Kristinin ulaz</button></div></>}
+    {mode === 'home' && <div className="salon-home-content">
+      <section className="salon-home-hero">
+        <div className="salon-home-copy">
+          <p className="eyebrow">FRIZERSKI SALON · MAJERJE</p>
+          <h1>Frizerski salon Kristina</h1>
+          <p className="salon-home-lead">Mjesto posvećeno lijepoj, njegovanoj kosi i frizuri u kojoj ćete se osjećati kao svoji.</p>
+          <button className="primary salon-client-entry" onClick={() => setMode('client')}>Ulaz za klijente</button>
+        </div>
+        <div className="salon-photo-placeholder salon-hero-placeholder" role="img" aria-label="Mjesto za buduću fotografiju salona">
+          <span>K</span>
+          <small>Fotografija salona</small>
+        </div>
+      </section>
+      <section className="salon-services" aria-labelledby="salon-services-title">
+        <p className="eyebrow">USLUGE</p>
+        <h2 id="salon-services-title">Njega prilagođena vama</h2>
+        <div className="salon-service-list">
+          {['Šišanje', 'Bojanje', 'Njega kose', 'Svečane frizure'].map((service, index) =>
+            <article key={service}><span>0{index + 1}</span><h3>{service}</h3></article>)}
+        </div>
+      </section>
+      <section className="salon-gallery" aria-labelledby="salon-gallery-title">
+        <div><p className="eyebrow">IZDVOJENO</p><h2 id="salon-gallery-title">Frizure iz salona</h2></div>
+        <div className="salon-gallery-grid">
+          {[1, 2, 3].map(item => <div className="salon-photo-placeholder" key={item} role="img" aria-label={`Mjesto za izdvojenu fotografiju frizure ${item}`}><span>✦</span><small>Fotografija frizure</small></div>)}
+        </div>
+      </section>
+      <footer className="salon-home-footer">
+        <div><strong>Frizerski salon Kristina</strong><span>Majerje</span></div>
+        <button className="salon-admin-entry" onClick={() => setMode('admin')}>Kristinin ulaz</button>
+      </footer>
+    </div>}
     {mode === 'admin' && <form onSubmit={event => void enterAdmin(event)}><h1>Kristinin ulaz</h1><label>E-mail<input type="email" autoComplete="username" required value={adminEmail} onChange={event => setAdminEmail(event.target.value)}/></label><label>Lozinka<input type="password" autoComplete="current-password" required value={adminPassword} onChange={event => setAdminPassword(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button><button className="link" type="button" onClick={()=>{setMode('admin-recovery');setMessage('');setAdminPassword('')}}>Zaboravljena lozinka?</button><button className="link" type="button" onClick={() => {setMode('home');setMessage('')}}>Natrag</button></form>}
     {mode === 'admin-recovery' && <form onSubmit={event=>void requestAdminRecovery(event)}><h1>Nova administratorska lozinka</h1><p>Upišite e-mail računa. Poslat ćemo sigurnu poveznicu za postavljanje nove lozinke.</p><label>E-mail<input type="email" autoComplete="email" required value={adminEmail} onChange={event=>setAdminEmail(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Slanje…':'Pošalji poveznicu'}</button><button className="link" type="button" onClick={()=>{setMode('admin');setMessage('')}}>Natrag na prijavu</button></form>}
     {mode === 'admin-reset-password' && <form onSubmit={event=>void setRecoveredPassword(event)}><h1>Postavite novu lozinku</h1>{!recoveryReady&&<p className="important-note">Provjera sigurnosne poveznice…</p>}<label>Nova lozinka<input type="password" autoComplete="new-password" minLength={8} required disabled={!recoveryReady} value={adminPassword} onChange={event=>setAdminPassword(event.target.value)}/></label><label>Ponovite novu lozinku<input type="password" autoComplete="new-password" minLength={8} required disabled={!recoveryReady} value={pinConfirm} onChange={event=>setPinConfirm(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working||!recoveryReady} type="submit">{working?'Spremanje…':'Spremi novu lozinku'}</button></form>}

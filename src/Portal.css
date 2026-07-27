@@ -66,3 +66,51 @@
 .client-chat .new-message{animation:message-flash 1.1s ease-in-out 2}
 @media(max-width:600px){.chat-bubble{max-width:90%}.chat-composer{align-items:stretch;flex-direction:column}}
 .unread-message-alert{display:grid;grid-template-columns:auto 1fr auto;gap:.75rem;align-items:center;width:100%;margin-bottom:1rem;padding:1rem;border:0;border-radius:16px;background:#713d35;color:#fff;text-align:left;box-shadow:0 8px 22px #58312935;cursor:pointer}.unread-message-alert span{font-size:1.5rem}.unread-message-alert div{display:flex;flex-direction:column;gap:.15rem}.unread-message-alert small{color:#f4ddd6}.unread-message-alert b{display:grid;place-items:center;min-width:28px;height:28px;padding:0 .45rem;border-radius:50%;background:#d94d42}
+
+.salon-home-page{display:block;padding:0;background:#f6efe9}
+.access-card.salon-home{width:100%;min-height:100dvh;padding:0;border:0;border-radius:0;background:#f8f2ec;box-shadow:none}
+.salon-home>.portal-brand{width:min(1180px,100%);margin:0 auto;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) 18px max(20px,env(safe-area-inset-left))}
+.salon-home-content{overflow:hidden}
+.salon-home-hero,.salon-services,.salon-gallery,.salon-home-footer{width:min(1180px,100%);margin:0 auto;padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
+.salon-home-hero{display:grid;gap:28px;padding-top:24px;padding-bottom:54px}
+.salon-home-copy{align-self:center}
+.salon-home-copy h1{max-width:720px;margin:10px 0 16px;font-size:clamp(42px,11vw,76px);line-height:.98;letter-spacing:-.035em}
+.salon-home-lead{max-width:580px;margin:0;color:var(--muted);font-size:17px;line-height:1.65}
+.salon-client-entry{width:auto;min-width:180px;margin-top:26px;padding:12px 20px}
+.salon-photo-placeholder{display:grid;min-width:0;place-items:center;align-content:center;gap:8px;overflow:hidden;border:1px solid #d9c1b4;border-radius:18px;background:linear-gradient(145deg,#e7d6cc,#cfae9d);color:#6f4b40}
+.salon-photo-placeholder span{font:500 34px 'Playfair Display'}
+.salon-photo-placeholder small{font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.salon-hero-placeholder{min-height:310px}
+.salon-services{padding-top:48px;padding-bottom:54px;border-top:1px solid var(--line)}
+.salon-services h2,.salon-gallery h2{margin:7px 0 24px;font-size:clamp(30px,8vw,44px)}
+.salon-service-list{display:grid;border-top:1px solid var(--line)}
+.salon-service-list article{display:flex;align-items:center;gap:18px;min-height:66px;border-bottom:1px solid var(--line)}
+.salon-service-list article span{color:var(--terracotta);font-size:11px;letter-spacing:.12em}
+.salon-service-list h3{margin:0;font:500 22px 'Playfair Display'}
+.salon-gallery{padding-top:48px;padding-bottom:60px}
+.salon-gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.salon-gallery-grid .salon-photo-placeholder{min-height:190px}
+.salon-gallery-grid .salon-photo-placeholder:first-child{grid-column:1/-1;min-height:260px}
+.salon-home-footer{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding-top:24px;padding-bottom:max(30px,env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+.salon-home-footer strong,.salon-home-footer span{display:block}
+.salon-home-footer span{margin-top:4px;color:var(--muted);font-size:13px}
+.salon-admin-entry{min-height:44px;padding:8px 0;border:0;background:transparent;color:#8a7770;font-size:11px;text-decoration:underline;text-underline-offset:3px}
+
+@media(min-width:760px){
+  .salon-home>.portal-brand{padding-top:28px}
+  .salon-home-hero{grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);min-height:610px;padding-top:36px;padding-bottom:70px}
+  .salon-hero-placeholder{height:500px}
+  .salon-service-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .salon-service-list article:nth-child(odd){border-right:1px solid var(--line)}
+  .salon-service-list article{padding:0 22px}
+  .salon-gallery-grid{grid-template-columns:1.35fr 1fr 1fr}
+  .salon-gallery-grid .salon-photo-placeholder,.salon-gallery-grid .salon-photo-placeholder:first-child{grid-column:auto;min-height:360px}
+}
+
+@media(max-width:350px){
+  .access-card.salon-home{padding:0}
+  .salon-home-copy h1{font-size:38px}
+  .salon-gallery-grid{grid-template-columns:1fr}
+  .salon-gallery-grid .salon-photo-placeholder:first-child{grid-column:auto}
+  .salon-home-footer{align-items:flex-start;flex-direction:column}
+}
