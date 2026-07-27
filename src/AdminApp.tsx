@@ -25,6 +25,7 @@ import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
 import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
 import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppointmentServiceRow } from './lib/adminAppointmentSync'
 import { updateAppBadge } from './lib/appBadge'
+import { useAutoDismissNotice } from './lib/useAutoDismissNotice'
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import './Portal.css'
@@ -157,6 +158,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const imageFiles = useRef<{ before?: File; after?: File }>({})
   const previousNoChargeRef = useRef(false)
   const priceBeforeNoChargeRef = useRef<{ appointmentId: string; price: number; manual: boolean } | null>(null)
+  useAutoDismissNotice(notice, setNotice)
 
   useEffect(() => {
     if (!supabase) return
@@ -207,7 +209,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       manual: appointmentForm.priceWasManuallyAdjusted === true,
     }
   }, [appointmentForm])
-  function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) { setNotice(message); window.setTimeout(() => setNotice(''), 2600) } }
+  function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) setNotice(message) }
   function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
   const filteredClients = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('hr')
