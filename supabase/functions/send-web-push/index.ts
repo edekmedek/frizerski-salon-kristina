@@ -25,8 +25,8 @@ Deno.serve(async request => {
     const { data: role } = await caller.from('user_roles').select('role').eq('user_id', userData.user.id).maybeSingle()
     if (role?.role !== 'admin') throw new Error('Not authorized')
 
-    const { clientId, title, body, notificationUrl, tag } = await request.json()
-    if (!clientId || !body) throw new Error('clientId and body are required')
+    const { clientId, tag } = await request.json()
+    if (!clientId) throw new Error('clientId is required')
 
     const admin = createClient(url, serviceKey)
     const { data: subscriptions, error } = await admin
@@ -44,29 +44,37 @@ Deno.serve(async request => {
 
     webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate)
     const payload = JSON.stringify({
-      title: title ?? 'Salon Kristina',
-      body,
-      url: notificationUrl ?? '/',
+      title: 'Salon Kristina',
+      body: 'Imate novu poruku iz Salona Kristina.',
+      url: 'https://frizerskisalonkristina.hr/#/client/messages',
       tag: tag ?? 'salon-kristina-message',
       unreadCount: unreadCount ?? 1,
     })
 
     const expired: string[] = []
+    let sent = 0
+    let failed = 0
     await Promise.all((subscriptions ?? []).map(async subscription => {
       try {
         await webpush.sendNotification({
           endpoint: subscription.endpoint,
           keys: { p256dh: subscription.p256dh, auth: subscription.auth },
         }, payload)
+        sent += 1
       } catch (pushError) {
         const statusCode = (pushError as { statusCode?: number }).statusCode
         if (statusCode === 404 || statusCode === 410) expired.push(subscription.id)
-        else throw pushError
+        failed += 1
       }
     }))
     if (expired.length) await admin.from('client_push_subscriptions').delete().in('id', expired)
 
-    return new Response(JSON.stringify({ sent: (subscriptions?.length ?? 0) - expired.length }), {
+    return new Response(JSON.stringify({
+      subscriptionsFound: subscriptions?.length ?? 0,
+      sent,
+      failed,
+      expiredRemoved: expired.length,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error) {

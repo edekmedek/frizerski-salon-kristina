@@ -10,20 +10,20 @@ self.addEventListener('push', event => {
       await self.registration.clearAppBadge()
     }
     await self.registration.showNotification(payload.title ?? 'Salon Kristina', {
-      body: payload.body ?? 'Imate novu poruku.',
+      body: 'Imate novu poruku iz Salona Kristina.',
       icon: './favicon.svg',
       badge: './favicon.svg',
       tag: payload.tag ?? 'salon-kristina-message',
       renotify: true,
       vibrate: [180, 80, 180],
-      data: { url: payload.url ?? './' },
+      data: { url: payload.url ?? './#/client/messages' },
     })
   })())
 })
 
 self.addEventListener('notificationclick', event => {
   event.notification.close()
-  const target = new URL(event.notification.data?.url ?? './', self.location.origin).href
+  const target = new URL(event.notification.data?.url ?? './#/client/messages', self.location.origin).href
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const existing = windows.find(client => client.url.startsWith(self.location.origin))

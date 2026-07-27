@@ -26,6 +26,7 @@ import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminReq
 import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppointmentServiceRow } from './lib/adminAppointmentSync'
 import { updateAppBadge } from './lib/appBadge'
 import { useAutoDismissNotice } from './lib/useAutoDismissNotice'
+import { parseClientPushResult, savedMessagePushNotice, type ClientPushOutcome } from './lib/clientPush'
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import './Portal.css'
@@ -227,17 +228,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const openRequests = portal.requests.filter(item => item.status === 'novo' || item.status === 'u_razgovoru')
 
   function updatePortal(next: PortalData) { setPortal(next); savePortalData(next) }
-  async function sendClientPush(clientId: string, title: string, body: string, tag = 'salon-kristina-message') {
-    if (!supabase) return
-    await supabase.functions.invoke('send-web-push', {
-      body: {
-        clientId,
-        title,
-        body,
-        tag,
-        notificationUrl: `${window.location.origin}${import.meta.env.BASE_URL}`,
-      },
+  async function sendClientPush(clientId: string, tag = 'salon-kristina-message'): Promise<ClientPushOutcome> {
+    if (!supabase) return { status: 'failed' }
+    const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-web-push', {
+      body: { clientId, tag },
     })
+    return parseClientPushResult(pushResult, Boolean(pushError))
   }
   function resetAdminPinFields() {
     const empty = createEmptyAdminPinFields()
@@ -429,12 +425,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     })
     setInboxBusy(false)
     if (error) { setNotice('Prijedlog termina nije poslan. Provjerite je li nova Supabase migracija primijenjena.'); return }
-    void sendClientPush(
-      selectedAdminRequest.clientId,
-      'Novi prijedlog termina',
-      proposal,
-      `appointment-proposal-${selectedAdminRequest.id}`,
-    )
+    void sendClientPush(selectedAdminRequest.clientId, `appointment-proposal-${selectedAdminRequest.id}`)
     await loadAdminInbox()
     setSelectedAdminRequest(undefined)
     setRequestDraftTime('')
@@ -694,11 +685,11 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     if (!supabase) return false
     setInboxBusy(true)
     const { error } = await supabase.rpc('admin_send_message', { target_client_id: clientId, message_body: message })
+    if (error) { setInboxBusy(false); setNotice('Poruku nije moguće poslati.'); return false }
+    const pushOutcome = await sendClientPush(clientId)
     setInboxBusy(false)
-    if (error) { setNotice('Poruku nije moguće poslati.'); return false }
-    void sendClientPush(clientId, 'Nova poruka iz salona', message)
     await loadAdminInbox()
-    setNotice('Poruka je poslana klijentu.')
+    setNotice(savedMessagePushNotice(pushOutcome))
     return true
   }
 
@@ -706,11 +697,11 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     if (!supabase) return false
     setInboxBusy(true)
     const { error } = await supabase.rpc('admin_send_message', { target_client_id: message.clientId, message_body: reply })
+    if (error) { setInboxBusy(false); setNotice('Odgovor nije spremljen u Supabase.'); return false }
+    const pushOutcome = await sendClientPush(message.clientId)
     setInboxBusy(false)
-    if (error) { setNotice('Odgovor nije spremljen u Supabase.'); return false }
-    void sendClientPush(message.clientId, 'Nova poruka iz salona', reply)
     await loadAdminInbox()
-    setNotice('Odgovor je poslan klijentu.')
+    setNotice(savedMessagePushNotice(pushOutcome))
     return true
   }
 
@@ -939,12 +930,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         if (notification.error) {
           setNotice('Termin je otkazan, ali obavijest klijentu nije poslana.')
         } else {
-          void sendClientPush(
-            appointmentForm.clientId,
-            'Termin je otkazan',
-            cancellationText,
-            `appointment-cancelled-${appointmentForm.id}`,
-          )
+          void sendClientPush(appointmentForm.clientId, `appointment-cancelled-${appointmentForm.id}`)
         }
       } else if (appointmentWasMoved) {
         const notification = await supabase.from('messages').insert({
@@ -957,12 +943,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         if (notification.error) {
           setNotice('Termin je promijenjen, ali obavijest klijentu nije poslana.')
         } else {
-          void sendClientPush(
-            appointmentForm.clientId,
-            'Termin je promijenjen',
-            `Novi termin: ${formatDateTime(appointmentForm.dateTime)} · ${appointmentTreatmentLabel(appointmentForm)}`,
-            `appointment-${appointmentForm.id}`,
-          )
+          void sendClientPush(appointmentForm.clientId, `appointment-${appointmentForm.id}`)
         }
       }
       setSyncStatus('synced')
@@ -1130,7 +1111,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     ? conflictingAppointments(selectedCalendarDate, requestDraftTime, selectedAdminRequest.service, data.appointments, '', requestDraftDuration)
     : []
   return <div className="app-shell">
-    <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong><small>Topla elegancija</small></div></div>
+    <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
     </aside>

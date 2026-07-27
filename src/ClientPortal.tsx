@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
 import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
 import { countClientUnreadMessages, updateAppBadge } from './lib/appBadge'
+import { isClientMessagesLocation } from './lib/clientPush'
 import './Portal.css'
 
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos'
@@ -35,7 +36,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [bookableServices, setBookableServices] = useState<PublicService[]>([])
   const [requestCategory, setRequestCategory] = useState('')
   const [openPriceCategory, setOpenPriceCategory] = useState('')
-  const [section, setSection] = useState<Section>('home')
+  const [section, setSection] = useState<Section>(() => isClientMessagesLocation(window.location.hash) ? 'messages' : 'home')
   const [detail, setDetail] = useState<AppointmentRow | null>(null)
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
@@ -230,6 +231,14 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       if (!error && data) setMessages(current => current.map(item => item.sender === 'admin' && !item.client_read_at ? { ...item, client_read_at: String(data) } : item))
     })
   }, [section, messages])
+
+  useEffect(() => {
+    const openNotificationTarget = () => {
+      if (isClientMessagesLocation(window.location.hash)) setSection('messages')
+    }
+    window.addEventListener('hashchange', openNotificationTarget)
+    return () => window.removeEventListener('hashchange', openNotificationTarget)
+  }, [])
 
   useEffect(() => {
     void updateAppBadge(inboxCount)
