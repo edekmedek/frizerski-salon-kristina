@@ -243,7 +243,7 @@ export function AccessScreen() {
   }
 
   return <main className={`access-page${mode === 'home' ? ' salon-home-page' : ''}`}><section className={`access-card${mode === 'home' ? ' salon-home' : ''}`}>
-    <div className="portal-brand"><span>K</span><div><strong>Salon Kristina</strong><small>Topla elegancija</small></div></div>
+    <div className="portal-brand"><span>K</span><div><strong>Salon Kristina</strong>{mode !== 'home' && <small>Topla elegancija</small>}</div></div>
     {mode === 'home' && <div className="salon-home-content">
       <section className="salon-home-hero">
         <div className="salon-home-copy">
@@ -272,7 +272,7 @@ export function AccessScreen() {
         </div>
       </section>
       <footer className="salon-home-footer">
-        <div><strong>Frizerski salon Kristina</strong><span>Majerje</span></div>
+        <div><strong>Frizerski salon Kristina</strong><span>Školska 18, Pušćine<br />40305 Nedelišće</span></div>
         <button className="salon-admin-entry" onClick={() => setMode('admin')}>Kristinin ulaz</button>
       </footer>
     </div>}
