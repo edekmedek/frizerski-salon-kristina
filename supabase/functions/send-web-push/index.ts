@@ -2,12 +2,15 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import webpush from 'npm:web-push@3.6.7'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+  'Access-Control-Allow-Origin': 'https://frizerskisalonkristina.hr',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+  'Vary': 'Origin',
 }
 
 Deno.serve(async request => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders })
   try {
     const authorization = request.headers.get('Authorization')
     if (!authorization) throw new Error('Authorization is required')

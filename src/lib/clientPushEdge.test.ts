@@ -19,4 +19,12 @@ describe('send-web-push payload', () => {
     expect(edgeSource).toContain('subscriptionsFound')
     expect(edgeSource).toContain('failed')
   })
+
+  it('returns the complete production CORS contract', () => {
+    expect(edgeSource).toContain("'Access-Control-Allow-Origin': 'https://frizerskisalonkristina.hr'")
+    expect(edgeSource).toContain("'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'")
+    expect(edgeSource).toContain("'Access-Control-Allow-Methods': 'POST, OPTIONS'")
+    expect(edgeSource).toContain("new Response(null, { status: 204, headers: corsHeaders })")
+    expect(edgeSource.split("headers: { ...corsHeaders, 'Content-Type': 'application/json' }")).toHaveLength(3)
+  })
 })
