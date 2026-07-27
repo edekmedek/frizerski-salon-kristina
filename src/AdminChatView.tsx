@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { formatDateTime } from './lib/date'
 import type { AdminMessage } from './lib/adminInbox'
 
@@ -12,27 +12,71 @@ interface Props {
   onClose: () => void
 }
 
+export function shouldScrollChat({
+  conversationChanged,
+  messageChanged,
+  force,
+  nearBottom,
+}: {
+  conversationChanged: boolean
+  messageChanged: boolean
+  force: boolean
+  nearBottom: boolean
+}) {
+  return conversationChanged || force || (messageChanged && nearBottom)
+}
+
 export function AdminChatView({ messages, selected, busy, clients, onOpen, onReply, onNew, onDelete, onClose }: Props) {
   const [reply, setReply] = useState('')
   const [composing, setComposing] = useState(false)
   const [newClientId, setNewClientId] = useState('')
   const [newMessage, setNewMessage] = useState('')
+  const threadRef = useRef<HTMLDivElement>(null)
+  const previousConversationRef = useRef('')
+  const previousLastMessageRef = useRef('')
+  const nearBottomRef = useRef(true)
+  const forceScrollRef = useRef(false)
   const active = messages.filter(item => !item.archivedAt)
   const conversations = [...active.reduce((latest, message) => {
     const current = latest.get(message.clientId)
     if (!current || current.createdAt < message.createdAt) latest.set(message.clientId, message)
     return latest
   }, new Map<string, AdminMessage>()).values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const conversation = selected
+    ? active.filter(item => item.clientId === selected.clientId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    : []
+  const lastMessageId = conversation.at(-1)?.id ?? ''
+
+  useLayoutEffect(() => {
+    const thread = threadRef.current
+    if (!thread || !selected) return
+    const conversationChanged = previousConversationRef.current !== selected.clientId
+    const messageChanged = previousLastMessageRef.current !== lastMessageId
+    if (shouldScrollChat({
+      conversationChanged,
+      messageChanged,
+      force: forceScrollRef.current,
+      nearBottom: nearBottomRef.current,
+    })) {
+      thread.scrollTop = thread.scrollHeight
+      nearBottomRef.current = true
+    }
+    previousConversationRef.current = selected.clientId
+    previousLastMessageRef.current = lastMessageId
+    forceScrollRef.current = false
+  }, [lastMessageId, selected])
 
   if (selected) {
-    const conversation = active.filter(item => item.clientId === selected.clientId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     return <section className="admin-card admin-chat">
       <header className="admin-chat-header"><button className="secondary" type="button" onClick={onClose}>← Poruke</button><div><h2>{selected.clientName}</h2><p>{selected.clientPhone}</p></div></header>
-      <div className="chat-thread">{conversation.map(message => <article className={`chat-bubble ${message.sender}`} key={message.id}>
+      <div className="chat-thread" ref={threadRef} onScroll={event => {
+        const thread = event.currentTarget
+        nearBottomRef.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 80
+      }}>{conversation.map(message => <article className={`chat-bubble ${message.sender}`} key={message.id}>
         {message.subject && <strong>{message.subject}</strong>}<p>{message.message}</p>
         <footer><span>{formatDateTime(message.createdAt)}</span>{message.sender === 'admin' && <span className={message.clientReadAt ? 'read-receipt read' : 'read-receipt'}>{message.clientReadAt ? '✓✓ Pročitano' : '✓ Poslano'}</span>}<button type="button" disabled={busy} onClick={() => void onDelete(message)}>Obriši</button></footer>
       </article>)}</div>
-      <form className="chat-composer" onSubmit={async event => { event.preventDefault(); const text = reply.trim(); if (text && !busy && await onReply(selected, text)) setReply('') }}>
+      <form className="chat-composer" onSubmit={async event => { event.preventDefault(); const text = reply.trim(); if (!text || busy) return; forceScrollRef.current = true; if (await onReply(selected, text)) setReply(''); else forceScrollRef.current = false }}>
         <textarea aria-label="Nova poruka" rows={2} value={reply} onChange={event => setReply(event.target.value)} placeholder="Napiši poruku…"/><button className="primary" disabled={busy || !reply.trim()} type="submit">Pošalji</button>
       </form>
     </section>
