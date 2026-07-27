@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
 import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
 import { countClientUnreadMessages, subscribeToAppForeground, updateAppBadge } from './lib/appBadge'
-import { closeReadClientMessageNotifications, isClientMessagesLocation } from './lib/clientPush'
+import { closeReadClientMessageNotifications, isClientMessagesLocation, registerSalonPushWorker } from './lib/clientPush'
 import './Portal.css'
 
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos'
@@ -71,8 +71,8 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     if (Notification.permission === 'denied') {
       return
     }
-    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}push-sw.js`)
-      .then(registration => registration.pushManager.getSubscription())
+    void registerSalonPushWorker()
+      .then(registration => registration.pushManager?.getSubscription())
       .then(async subscription => {
         setPushState(subscription ? 'enabled' : 'available')
         if (!subscription || !supabase) return

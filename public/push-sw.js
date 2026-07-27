@@ -16,7 +16,11 @@ self.addEventListener('push', event => {
       tag: payload.tag ?? 'salon-kristina-message',
       renotify: true,
       vibrate: [180, 80, 180],
-      data: { url: payload.url ?? './#/client/messages' },
+      data: {
+        url: payload.url ?? './#/client/messages',
+        salonKristina: true,
+        notificationType: 'client-message',
+      },
     })
   })())
 })
@@ -38,10 +42,15 @@ self.addEventListener('notificationclick', event => {
 self.addEventListener('message', event => {
   if (event.data?.type !== 'CLIENT_MESSAGES_READ' || event.data?.tag !== 'salon-kristina-message') return
   event.waitUntil((async () => {
-    const notifications = await self.registration.getNotifications({
-      tag: 'salon-kristina-message',
-    })
-    notifications.forEach(notification => notification.close())
+    const notifications = await self.registration.getNotifications()
+    notifications
+      .filter(notification =>
+        notification.tag === 'salon-kristina-message'
+        || (
+          notification.data?.salonKristina === true
+          && notification.data?.notificationType === 'client-message'
+        ))
+      .forEach(notification => notification.close())
     if (self.registration.clearAppBadge) await self.registration.clearAppBadge()
   })())
 })

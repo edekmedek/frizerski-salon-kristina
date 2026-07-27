@@ -31,13 +31,51 @@ export function savedMessagePushNotice(outcome: ClientPushOutcome) {
 
 export const CLIENT_MESSAGES_HASH = '#/client/messages'
 export const CLIENT_MESSAGE_NOTIFICATION_TAG = 'salon-kristina-message'
+export const SALON_PUSH_WORKER_URL = `${import.meta.env.BASE_URL}push-sw.js?v=2`
 
 export function isClientMessagesLocation(hash: string) {
   return hash === CLIENT_MESSAGES_HASH
 }
 
+interface ClientMessageNotification {
+  tag: string
+  data?: { salonKristina?: boolean; notificationType?: string }
+  close: () => void
+}
+
+interface PushRegistration {
+  active: { postMessage: (message: unknown) => void } | null
+  pushManager?: PushManager
+  getNotifications?: () => Promise<ClientMessageNotification[]>
+  clearAppBadge?: () => Promise<void>
+  update?: () => Promise<unknown>
+}
+
 interface PushServiceWorkerContainer {
-  ready: Promise<{ active: { postMessage: (message: unknown) => void } | null }>
+  ready: Promise<PushRegistration>
+  register?: (
+    scriptURL: string,
+    options?: { updateViaCache?: ServiceWorkerUpdateViaCache },
+  ) => Promise<PushRegistration>
+}
+
+export async function registerSalonPushWorker(
+  serviceWorker: PushServiceWorkerContainer = navigator.serviceWorker,
+) {
+  if (!serviceWorker.register) return serviceWorker.ready
+  const registration = await serviceWorker.register(SALON_PUSH_WORKER_URL, {
+    updateViaCache: 'none',
+  })
+  await registration.update?.()
+  return registration
+}
+
+export function isSalonClientMessageNotification(notification: ClientMessageNotification) {
+  return notification.tag === CLIENT_MESSAGE_NOTIFICATION_TAG
+    || (
+      notification.data?.salonKristina === true
+      && notification.data?.notificationType === 'client-message'
+    )
 }
 
 export async function closeReadClientMessageNotifications(
@@ -47,10 +85,15 @@ export async function closeReadClientMessageNotifications(
   if (!serviceWorker) return
   try {
     const registration = await serviceWorker.ready
+    const notifications = await registration.getNotifications?.() ?? []
+    notifications
+      .filter(isSalonClientMessageNotification)
+      .forEach(notification => notification.close())
     registration.active?.postMessage({
       type: 'CLIENT_MESSAGES_READ',
       tag: CLIENT_MESSAGE_NOTIFICATION_TAG,
     })
+    await registration.clearAppBadge?.()
   } catch {
     // Service worker messaging is optional and must not interrupt message reading.
   }

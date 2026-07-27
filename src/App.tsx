@@ -7,6 +7,7 @@ import { getPortalSession, setPortalSession } from './lib/portalStorage'
 import { useKeyboardViewport } from './lib/useKeyboardViewport'
 import { supabase } from './lib/supabase'
 import { updateAppBadge } from './lib/appBadge'
+import { registerSalonPushWorker } from './lib/clientPush'
 import './KeyboardViewport.css'
 
 function App() {
@@ -16,7 +17,7 @@ function App() {
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}push-sw.js`)
+      void registerSalonPushWorker()
     }
   }, [])
 

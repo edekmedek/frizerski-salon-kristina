@@ -48,7 +48,8 @@ describe('send-web-push payload', () => {
 
   it('closes only salon message notifications after confirmed reading', () => {
     expect(workerSource).toContain("event.data?.type !== 'CLIENT_MESSAGES_READ'")
-    expect(workerSource).toContain("tag: 'salon-kristina-message'")
+    expect(workerSource).toContain("notification.tag === 'salon-kristina-message'")
+    expect(workerSource).toContain("notification.data?.notificationType === 'client-message'")
     expect(workerSource).toContain('notification.close()')
     expect(workerSource).toContain('self.registration.clearAppBadge')
   })
