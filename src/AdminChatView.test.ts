@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldScrollChat } from './AdminChatView'
+import { shouldScrollChat } from './lib/chatScroll'
 
 describe('admin chat scroll behavior', () => {
   it('opens a conversation at its newest message', () => {

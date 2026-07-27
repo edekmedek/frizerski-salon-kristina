@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { formatDateTime } from './lib/date'
 import type { AdminMessage } from './lib/adminInbox'
+import { shouldScrollChat } from './lib/chatScroll'
 
 interface Props {
   messages: AdminMessage[]; selected?: AdminMessage; busy: boolean
@@ -10,20 +11,6 @@ interface Props {
   onNew: (clientId: string, message: string) => Promise<boolean>
   onDelete: (message: AdminMessage) => Promise<boolean>
   onClose: () => void
-}
-
-export function shouldScrollChat({
-  conversationChanged,
-  messageChanged,
-  force,
-  nearBottom,
-}: {
-  conversationChanged: boolean
-  messageChanged: boolean
-  force: boolean
-  nearBottom: boolean
-}) {
-  return conversationChanged || force || (messageChanged && nearBottom)
 }
 
 export function AdminChatView({ messages, selected, busy, clients, onOpen, onReply, onNew, onDelete, onClose }: Props) {
