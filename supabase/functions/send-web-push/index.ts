@@ -28,10 +28,13 @@ Deno.serve(async request => {
     const requestBody = await request.json()
     const admin = createClient(url, serviceKey)
 
-    if (requestBody.action === 'deduplicate-client-subscriptions') {
+    if (
+      requestBody.action === 'deduplicate-client-subscriptions'
+      || requestBody.action === 'test-client-push'
+    ) {
       const { data: ownClient, error: clientError } = await caller
         .from('clients')
-        .select('id')
+        .select('id,endpoint,p256dh,auth')
         .eq('user_id', userData.user.id)
         .eq('is_active', true)
         .maybeSingle()
@@ -43,6 +46,36 @@ Deno.serve(async request => {
         .eq('client_id', ownClient.id)
         .order('updated_at', { ascending: false })
       if (subscriptionsError) throw subscriptionsError
+
+      if (requestBody.action === 'test-client-push') {
+        const subscription = ownSubscriptions?.[0]
+        if (!subscription) {
+          return new Response(JSON.stringify({ subscriptionsFound: 0, sent: 0, failed: 0 }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+        webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate)
+        try {
+          await webpush.sendNotification({
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+          }, JSON.stringify({
+            title: 'Salon Kristina',
+            body: 'Probna obavijest uspješno je uključena.',
+            url: 'https://frizerskisalonkristina.hr/#/client/notifications',
+            tag: 'salon-kristina-notification-test',
+            notificationType: 'notification-test',
+            unreadCount: 0,
+          }))
+          return new Response(JSON.stringify({ subscriptionsFound: 1, sent: 1, failed: 0 }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        } catch {
+          return new Response(JSON.stringify({ subscriptionsFound: 1, sent: 0, failed: 1 }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
 
       const staleIds = (ownSubscriptions ?? []).slice(1).map(subscription => subscription.id)
       if (staleIds.length) {

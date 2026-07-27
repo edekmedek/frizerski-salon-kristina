@@ -10,7 +10,7 @@ self.addEventListener('push', event => {
       await self.registration.clearAppBadge()
     }
     await self.registration.showNotification(payload.title ?? 'Salon Kristina', {
-      body: 'Imate novu poruku iz Salona Kristina.',
+      body: payload.body ?? 'Imate novu poruku iz Salona Kristina.',
       icon: './favicon.svg',
       badge: './favicon.svg',
       tag: payload.tag ?? 'salon-kristina-message',
@@ -19,7 +19,7 @@ self.addEventListener('push', event => {
       data: {
         url: payload.url ?? './#/client/messages',
         salonKristina: true,
-        notificationType: 'client-message',
+        notificationType: payload.notificationType ?? 'client-message',
       },
     })
   })())

@@ -4,10 +4,11 @@ import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
 import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
 import { countClientUnreadMessages, subscribeToAppForeground, updateAppBadge } from './lib/appBadge'
-import { closeReadClientMessageNotifications, isClientMessagesLocation, registerSalonPushWorker } from './lib/clientPush'
+import { closeReadClientMessageNotifications, isClientMessagesLocation, isClientNotificationsLocation, registerSalonPushWorker } from './lib/clientPush'
+import { detectNotificationPlatform, getLastSuccessfulPushTest, saveLastSuccessfulPushTest } from './lib/notificationSetup'
 import './Portal.css'
 
-type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos'
+type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos' | 'notifications'
 type PushState = 'unsupported' | 'available' | 'enabled' | 'denied' | 'working'
 interface ClientRow { id: string; first_name: string; last_name: string }
 interface AppointmentRow { id: string; starts_at: string; ends_at: string | null; service: string | null; service_name_snapshot: string | null; service_price_snapshot: number | null; service_duration_snapshot: number | null; notes: string | null; status: string }
@@ -43,7 +44,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [bookableServices, setBookableServices] = useState<PublicService[]>([])
   const [requestCategory, setRequestCategory] = useState('')
   const [openPriceCategory, setOpenPriceCategory] = useState('')
-  const [section, setSection] = useState<Section>(() => isClientMessagesLocation(window.location.hash) ? 'messages' : 'home')
+  const [section, setSection] = useState<Section>(() => isClientMessagesLocation(window.location.hash) ? 'messages' : isClientNotificationsLocation(window.location.hash) ? 'notifications' : 'home')
   const [detail, setDetail] = useState<AppointmentRow | null>(null)
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
@@ -55,6 +56,10 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported'
     return Notification.permission === 'denied' ? 'denied' : 'available'
   })
+  const [serviceWorkerActive, setServiceWorkerActive] = useState(false)
+  const [pushTestBusy, setPushTestBusy] = useState(false)
+  const [lastPushTestAt, setLastPushTestAt] = useState(() => getLastSuccessfulPushTest())
+  const platform = useMemo(() => detectNotificationPlatform(), [])
   const knownMessageIdsRef = useRef<Set<string>>(new Set())
   const knownRequestVersionsRef = useRef<Map<string, string>>(new Map())
   const messagesInitializedRef = useRef(false)
@@ -74,6 +79,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     void registerSalonPushWorker()
       .then(registration => registration.pushManager?.getSubscription())
       .then(async subscription => {
+        setServiceWorkerActive(true)
         setPushState(subscription ? 'enabled' : 'available')
         if (!subscription || !supabase) return
         const serialized = subscription.toJSON()
@@ -119,6 +125,24 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       setPushState(Notification.permission === 'denied' ? 'denied' : 'available')
       setNotice(pushErrorMessage(error))
     }
+  }
+
+  async function sendTestPush() {
+    if (!supabase || pushState !== 'enabled' || pushTestBusy) return
+    setPushTestBusy(true)
+    const { data, error } = await supabase.functions.invoke('send-web-push', {
+      body: { action: 'test-client-push' },
+    })
+    setPushTestBusy(false)
+    const result = data as { sent?: number } | null
+    if (error || result?.sent !== 1) {
+      setNotice('Probna obavijest nije poslana. Provjerite upute za uređaj.')
+      return
+    }
+    const testedAt = new Date().toISOString()
+    saveLastSuccessfulPushTest(testedAt)
+    setLastPushTestAt(testedAt)
+    setNotice('Probna obavijest je poslana. Obavijesti su spremne.')
   }
 
   function playNewMessageSound() {
@@ -283,6 +307,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   useEffect(() => {
     const openNotificationTarget = () => {
       if (isClientMessagesLocation(window.location.hash)) setSection('messages')
+      if (isClientNotificationsLocation(window.location.hash)) setSection('notifications')
     }
     window.addEventListener('hashchange', openNotificationTarget)
     return () => window.removeEventListener('hashchange', openNotificationTarget)
@@ -393,11 +418,13 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     <main className="client-content">
       {notice&&<p className="portal-notice" role="status">{notice}</p>}
       {section==='home'&&inboxCount>0&&<button className="unread-message-alert" type="button" onClick={()=>setSection('messages')}><span>💬</span><div><strong>{inboxCount===1?'Imate novu poruku':`Imate ${inboxCount} nove poruke`}</strong><small>Dodirnite za pregled poruka</small></div><b>{inboxCount}</b></button>}
-      {section==='home'&&<><section className="client-hero"><p className="eyebrow">SLJEDEĆI POTVRĐENI TERMIN</p>{upcoming[0]?<><h2>{formatDateTime(upcoming[0].starts_at)}</h2><p>{appointmentService(upcoming[0])}</p><button className="link" onClick={()=>setDetail(upcoming[0])}>Detalji termina →</button></>:<><h2>Još nema potvrđenog termina</h2><p>Pošaljite želju, a Kristina će vam se javiti.</p></>}</section><button className="primary wide-action" onClick={()=>setSection('request')}>Pošalji želju za termin</button>{pushState!=='unsupported'&&<button className={`push-notification-button ${pushState==='enabled'?'enabled':''}`} type="button" disabled={pushState==='enabled'||pushState==='working'||pushState==='denied'} onClick={()=>void enablePushNotifications()}>{pushState==='enabled'?'🔔 Obavijesti uključene':pushState==='working'?'Uključivanje…':pushState==='denied'?'Obavijesti su blokirane':'🔔 Uključi obavijesti i zvuk'}</button>}{visibleRequests.length>0&&<section className="client-request-status"><h2>Moji zahtjevi</h2>{visibleRequests.map(item=><article key={item.id}><strong>{item.service||'Zahtjev za termin'}</strong><span>{requestStatusLabel(item.status as 'pending'|'in_review'|'confirmed'|'rejected')}</span>{item.admin_reply&&<p>{item.admin_reply}</p>}{item.status==='in_review'&&item.proposed_starts_at&&<div className="client-proposal-actions"><button className="primary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,true)}>{respondingRequestId===item.id?'Spremanje…':'Potvrđujem termin'}</button><button className="secondary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,false)}>Zatraži novi prijedlog</button></div>}{item.client_reply&&<small>{item.client_reply}</small>}</article>)}</section>}<div className="client-summary"><button onClick={()=>setSection('appointments')}><strong>{upcoming.length}</strong><span>Budući termini</span></button><button onClick={()=>setSection('messages')}><strong>{inboxCount}</strong><span>Poruke salona</span></button><button onClick={()=>setSection('photos')}><strong>{photos.length}</strong><span>Moje fotografije</span></button></div></>}
+      {section==='home'&&<><section className="client-hero"><p className="eyebrow">SLJEDEĆI POTVRĐENI TERMIN</p>{upcoming[0]?<><h2>{formatDateTime(upcoming[0].starts_at)}</h2><p>{appointmentService(upcoming[0])}</p><button className="link" onClick={()=>setDetail(upcoming[0])}>Detalji termina →</button></>:<><h2>Još nema potvrđenog termina</h2><p>Pošaljite želju, a Kristina će vam se javiti.</p></>}</section><button className="primary wide-action" onClick={()=>setSection('request')}>Pošalji želju za termin</button>{pushState!=='unsupported'&&<button className={`push-notification-button ${lastPushTestAt?'enabled':''}`} type="button" onClick={()=>setSection('notifications')}>{lastPushTestAt?'🔔 Obavijesti spremne':'🔔 Uključi obavijesti'}</button>}{visibleRequests.length>0&&<section className="client-request-status"><h2>Moji zahtjevi</h2>{visibleRequests.map(item=><article key={item.id}><strong>{item.service||'Zahtjev za termin'}</strong><span>{requestStatusLabel(item.status as 'pending'|'in_review'|'confirmed'|'rejected')}</span>{item.admin_reply&&<p>{item.admin_reply}</p>}{item.status==='in_review'&&item.proposed_starts_at&&<div className="client-proposal-actions"><button className="primary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,true)}>{respondingRequestId===item.id?'Spremanje…':'Potvrđujem termin'}</button><button className="secondary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,false)}>Zatraži novi prijedlog</button></div>}{item.client_reply&&<small>{item.client_reply}</small>}</article>)}</section>}<div className="client-summary"><button onClick={()=>setSection('appointments')}><strong>{upcoming.length}</strong><span>Budući termini</span></button><button onClick={()=>setSection('messages')}><strong>{inboxCount}</strong><span>Poruke salona</span></button><button onClick={()=>setSection('photos')}><strong>{photos.length}</strong><span>Moje fotografije</span></button></div></>}
+      {section==='home'&&pushState==='unsupported'&&<button className="push-notification-button" type="button" onClick={()=>setSection('notifications')}>🔔 Upute za obavijesti</button>}
       {section==='request'&&<section className="client-card-section"><h2>Želja za termin</h2><p className="important-note">Ovo nije rezervacija. Kristina će pregledati vašu želju i potvrditi termin.</p><form onSubmit={event=>void saveRequest(event)}><label>Kategorija<select required value={requestCategory} onChange={event=>setRequestCategory(event.target.value)}><option value="" disabled>Odaberite kategoriju</option>{requestCategories.map(category=><option key={category} value={category}>{category}</option>)}</select></label><label>Željena usluga<select required name="service" defaultValue="" disabled={!requestCategory} key={requestCategory}><option value="" disabled>{requestCategory?'Odaberite uslugu':'Prvo odaberite kategoriju'}</option>{bookableServices.filter(item=>item.categoryName===requestCategory).map(item=><option key={item.name} value={item.name}>{item.name} — {item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</option>)}</select></label><fieldset><legend>Poželjni dani</legend><input required name="preferredDates" type="date"/><input name="preferredDates" type="date"/><input name="preferredDates" type="date"/></fieldset><label>Dio dana<select name="dayPeriod" defaultValue="any"><option value="morning">Prijepodne</option><option value="afternoon">Poslijepodne</option><option value="any">Svejedno</option></select></label><label>Dodatne želje<textarea name="message" rows={4}/></label><button className="primary" type="submit">Pošalji želju Kristini</button><button className="secondary" type="button" onClick={()=>setSection('home')}>Odustani</button></form></section>}
       {section==='appointments'&&<section className="client-card-section"><h2>Moji budući termini</h2>{upcoming.length?<div className="portal-list">{upcoming.map(item=><button key={item.id} onClick={()=>setDetail(item)}><div><strong>{formatDateTime(item.starts_at)}</strong><span>{appointmentService(item)}</span></div><b>Potvrđeno</b></button>)}</div>:<p className="empty-state">Nema budućih potvrđenih termina.</p>}</section>}
       {section==='prices'&&<section className="client-card-section client-price-section"><h2>Cjenik</h2><div className="client-price-accordion">{priceCategories.map(category=>{const open=openPriceCategory===category;const items=priceList.filter(item=>item.categoryName===category);return <section className={`client-price-category ${open?'open':''}`} key={category}><button type="button" aria-expanded={open} onClick={()=>setOpenPriceCategory(open?'':category)}><span className="category-chevron" aria-hidden="true">›</span><strong>{category}</strong></button>{open&&<div className="client-price-list">{items.map(item=><div key={item.name}><span>{item.name}</span><strong>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</strong></div>)}</div>}</section>})}</div><p className="privacy-note">U cijene su uključeni svi porezi.</p></section>}
       {section==='messages'&&<section className="client-card-section client-chat"><h2>Poruke s Kristinom</h2><div className="chat-thread">{[...messages].reverse().map(item=><article className={`chat-bubble ${item.sender} ${highlightedMessageIds.includes(item.id)?'new-message':''}`} key={item.id}>{item.subject&&item.subject!=='Poruka klijenta'&&<strong>{item.subject}</strong>}<p>{item.message}</p><footer><span>{formatDateTime(item.created_at)}</span>{item.sender==='client'&&<span className={item.read_at?'read-receipt read':'read-receipt'}>{item.read_at?'✓✓ Pročitano':'✓ Poslano'}</span>}<button type="button" onClick={()=>void deleteClientMessage(item)}>Obriši</button></footer></article>)}{!messages.length&&<p className="empty-state">Još nema poruka. Ovdje možete izravno pisati Kristini.</p>}</div><form className="chat-composer" onSubmit={event=>void sendClientMessage(event)}><textarea rows={2} value={messageDraft} onChange={event=>setMessageDraft(event.target.value)} placeholder="Napiši poruku…"/><button className="primary" disabled={messageBusy||!messageDraft.trim()} type="submit">{messageBusy?'Šaljem…':'Pošalji'}</button></form></section>}
+      {section==='notifications'&&<section className="client-card-section notification-check"><button className="link" type="button" onClick={()=>setSection('home')}>← Natrag</button><h2>Provjera obavijesti</h2><p>Prođite korake redom. Dopuštenje tražimo samo kada pritisnete gumb.</p><div className="notification-status-list"><p><b>{platform.installed?'✓':'○'}</b><span>Aplikacija instalirana</span></p><p><b>{Notification.permission==='granted'?'✓':'○'}</b><span>Dopuštenje odobreno</span></p><p><b>{serviceWorkerActive?'✓':'○'}</b><span>Service worker aktivan</span></p><p><b>{pushState==='enabled'?'✓':'○'}</b><span>Push pretplata aktivna</span></p><p><b>{lastPushTestAt?'✓':'○'}</b><span>Zadnji uspješan test: {lastPushTestAt?formatDateTime(lastPushTestAt):'nije izvršen'}</span></p></div>{!platform.installed&&<div className="notification-help"><strong>1. Instalirajte aplikaciju</strong>{platform.ios?<p>U Safariju dodirnite Dijeli → Dodaj na početni zaslon, zatim otvorite Salon Kristina s početnog zaslona.</p>:<p>U izborniku preglednika odaberite „Instaliraj aplikaciju” ili „Dodaj na početni zaslon”, zatim je otvorite kao aplikaciju.</p>}</div>}<div className="notification-help"><strong>2. Dopustite obavijesti</strong><p>{platform.android?'Provjerite da su obavijesti dopuštene za Salon Kristina.':'Dopustite obavijesti kada ih aplikacija zatraži.'}</p><button className="primary" type="button" disabled={pushState==='working'||pushState==='enabled'} onClick={()=>void enablePushNotifications()}>{pushState==='working'?'Uključivanje…':pushState==='enabled'?'Pretplata je aktivna':'Uključi obavijesti'}</button></div><div className="notification-help"><strong>3. Pošaljite probnu obavijest</strong><p>Tek uspješan test potvrđuje da je pretplata spremna.</p><button className="secondary" type="button" disabled={pushState!=='enabled'||pushTestBusy} onClick={()=>void sendTestPush()}>{pushTestBusy?'Šaljem test…':'Pošalji probnu obavijest'}</button></div>{platform.samsung&&<div className="notification-help warning"><strong>Ako test ne stigne u pozadini na Samsungu</strong><p>Otvorite: Postavke → Aplikacije → Chrome → Baterija → Neograničeno. Po potrebi isto provjerite za Salon Kristina.</p><p>„Prisilno zaustavi” onemogućuje obavijesti dok ponovno ne otvorite aplikaciju.</p></div>}{platform.ios&&<div className="notification-help"><strong>iPhone/iPad</strong><p>Push radi samo iz aplikacije dodane na početni zaslon. U postavkama uređaja dopustite obavijesti za Salon Kristina.</p></div>}<p className="privacy-note">Aplikacija ne može sama mijenjati postavke baterije ili obavijesti vašeg uređaja.</p></section>}
       {section==='photos'&&<section className="client-card-section"><h2>Moje fotografije</h2>{photos.length?<div className="client-photo-grid">{photos.map(item=><article key={item.id}><img src={item.url} alt={item.phase==='before'?'Frizura prije tretmana':'Frizura poslije tretmana'}/><div><small>{item.phase==='before'?'Prije tretmana':'Poslije tretmana'}</small><strong>{formatDate(item.taken_at)}</strong><p>{item.notes}</p></div></article>)}</div>:<p className="empty-state">Kristina još nije podijelila fotografije s vama.</p>}<p className="privacy-note">Fotografije su privatne i koriste kratkotrajne autorizirane adrese.</p></section>}
     </main>
     {detail&&<div className="portal-modal-backdrop"><section className="portal-modal" role="dialog" aria-modal="true"><button className="modal-close" onClick={()=>setDetail(null)}>×</button><p className="eyebrow">POTVRĐENI TERMIN</p><h2>{formatDateTime(detail.starts_at)}</h2><p><strong>{appointmentService(detail)}</strong>{detail.service_price_snapshot!=null&&<> · {Number(detail.service_price_snapshot).toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</>}</p>{detail.notes&&<p>{detail.notes}</p>}<div className="portal-modal-actions"><button className="secondary" onClick={()=>void requestChange(detail,'change')}>Zatraži promjenu</button><button className="danger-action" onClick={()=>void requestChange(detail,'cancellation')}>Zatraži otkazivanje</button></div></section></div>}

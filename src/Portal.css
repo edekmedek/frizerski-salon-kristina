@@ -107,6 +107,7 @@
   .salon-gallery-grid{grid-template-columns:1.35fr 1fr 1fr}
   .salon-gallery-grid .salon-photo-placeholder,.salon-gallery-grid .salon-photo-placeholder:first-child{grid-column:auto;min-height:360px}
 }
+.notification-check>p{color:var(--muted);line-height:1.5}.notification-status-list{display:grid;gap:7px;margin:16px 0}.notification-status-list p{display:flex;align-items:center;gap:9px;margin:0;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff}.notification-status-list b{display:grid;width:24px;height:24px;place-items:center;border-radius:50%;background:#e7efe3;color:#537050}.notification-help{display:grid;gap:8px;margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:11px;background:#fffefa}.notification-help p{margin:0;color:var(--muted);line-height:1.5}.notification-help button{width:100%;min-height:44px}.notification-help.warning{border-color:#d9ae8f;background:#fff4e9}.notification-check>.link{min-height:44px;padding:0;background:transparent;color:var(--terracotta)}
 
 @media(max-width:350px){
   .access-card.salon-home{padding:0}

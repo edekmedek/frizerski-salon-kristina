@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CLIENT_MESSAGES_HASH,
+  CLIENT_NOTIFICATIONS_HASH,
+  isClientNotificationsLocation,
   isClientMessagesLocation,
   parseClientPushResult,
   savedMessagePushNotice,
@@ -29,5 +31,10 @@ describe('client push result', () => {
     expect(CLIENT_MESSAGES_HASH).toBe('#/client/messages')
     expect(isClientMessagesLocation('#/client/messages')).toBe(true)
     expect(isClientMessagesLocation('#/client/appointments')).toBe(false)
+  })
+
+  it('uses a direct notification-check target', () => {
+    expect(CLIENT_NOTIFICATIONS_HASH).toBe('#/client/notifications')
+    expect(isClientNotificationsLocation(CLIENT_NOTIFICATIONS_HASH)).toBe(true)
   })
 })

@@ -36,6 +36,13 @@ describe('send-web-push payload', () => {
     expect(edgeSource).toContain('const staleIds = (ownSubscriptions ?? []).slice(1)')
   })
 
+  it('offers an authenticated client test push without changing message delivery', () => {
+    expect(edgeSource).toContain("requestBody.action === 'test-client-push'")
+    expect(edgeSource).toContain('Probna obavijest uspješno je uključena.')
+    expect(edgeSource).toContain("notificationType: 'notification-test'")
+    expect(edgeSource).toContain("tag: 'salon-kristina-notification-test'")
+  })
+
   it('prevents duplicate rows for the same push endpoint', () => {
     expect(subscriptionMigrationSource).toContain('endpoint text not null unique')
     expect(subscriptionMigrationSource).toContain('on conflict (endpoint) do update')
@@ -59,6 +66,6 @@ describe('send-web-push payload', () => {
     expect(edgeSource).toContain("'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'")
     expect(edgeSource).toContain("'Access-Control-Allow-Methods': 'POST, OPTIONS'")
     expect(edgeSource).toContain("new Response(null, { status: 204, headers: corsHeaders })")
-    expect(edgeSource.split("headers: { ...corsHeaders, 'Content-Type': 'application/json' }")).toHaveLength(4)
+    expect(edgeSource.split("headers: { ...corsHeaders, 'Content-Type': 'application/json' }")).toHaveLength(7)
   })
 })
