@@ -23,6 +23,7 @@ import { createEmptyAdminPinFields, isValidAdminPin, isValidCurrentAdminPin } fr
 import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, normalizeAppointmentTreatmentTotals, removeTreatmentPreservingOverrides, treatmentTotals } from './lib/appointmentTreatments'
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
 import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
+import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppointmentServiceRow } from './lib/adminAppointmentSync'
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import './Portal.css'
@@ -84,7 +85,6 @@ function isTimeUnavailable(date:string,time:string,service:string,appointments:A
   return conflictingAppointments(date,time,service,appointments,editingId,candidateDuration).length>0
 }
 function localDateString(date:Date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`}
-function localDateTimeValue(value:string){const date=new Date(value);return `${localDateString(date)}T${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`}
 function firstAvailableTime(date:string,service:string,appointments:Appointment[],editingId='',futureOnly=false){
   const now=new Date(),today=localDateString(now),nextQuarter=Math.ceil((now.getHours()*60+now.getMinutes())/15)*15
   return timeOptions.find(time=>(!futureOnly||date!==today||timeToMinutes(time)>=nextQuarter)&&!isTimeUnavailable(date,time,service,appointments,editingId))||''
@@ -458,34 +458,10 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         createdAt: item.created_at,
         updatedAt: item.updated_at,
       }))
-      const mappedAppointments: Appointment[] = (appointments ?? []).map(item => {
-        const treatments = (treatmentRows ?? []).filter(row => row.appointment_id === item.id).map(row => ({
-          serviceId: row.service_id,
-          name: row.service_name_snapshot,
-          price: Number(row.service_price_snapshot),
-          durationMinutes: row.service_duration_snapshot ?? undefined,
-        }))
-        return normalizeAppointmentTreatmentTotals({
-        id: item.id,
-        clientId: item.client_id,
-        dateTime: localDateTimeValue(item.starts_at),
-        service: item.service_name_snapshot ?? item.service ?? '',
-        serviceId: item.service_id ?? undefined,
-        servicePrice: item.total_price_snapshot == null ? item.service_price_snapshot == null ? undefined : Number(item.service_price_snapshot) : Number(item.total_price_snapshot),
-        serviceDuration: item.total_duration_minutes ?? item.service_duration_snapshot ?? undefined,
-        treatments: treatments.length ? treatments : item.service_id ? [{
-          serviceId: item.service_id,
-          name: item.service_name_snapshot ?? item.service ?? '',
-          price: Number(item.service_price_snapshot ?? 0),
-          durationMinutes: item.service_duration_snapshot ?? undefined,
-        }] : [],
-        noCharge: item.no_charge === true,
-        status: item.status === 'cancelled' ? 'otkazan' : item.status === 'completed' ? 'zavrsen' : 'zakazan',
-        note: item.notes ?? '',
-        assignedBy: 'Kristina',
-        createdAt: item.created_at,
-        updatedAt: item.updated_at,
-      })})
+      const mappedAppointments = mapSupabaseAppointments(
+        (appointments ?? []) as SupabaseAppointmentRow[],
+        (treatmentRows ?? []) as SupabaseAppointmentServiceRow[],
+      )
       setData(current => ({ ...current, clients: mapped, appointments: mappedAppointments }))
       setServiceCatalog((services ?? []).map((item: {
         id: string
@@ -580,6 +556,30 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     return true
   }
 
+  async function loadAdminAppointments() {
+    if (!supabase) return false
+    const [appointmentResult, treatmentResult] = await Promise.all([
+      supabase.from('appointments').select('id,client_id,starts_at,service,status,notes,created_at,updated_at,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,total_price_snapshot,total_duration_minutes,no_charge'),
+      supabase.from('appointment_services').select('appointment_id,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,display_order').order('display_order'),
+    ])
+    if (appointmentResult.error || treatmentResult.error) {
+      setSyncStatus('error')
+      setNotice('Raspored nije moguće sinkronizirati.')
+      return false
+    }
+    const appointments = mapSupabaseAppointments(
+      (appointmentResult.data ?? []) as SupabaseAppointmentRow[],
+      (treatmentResult.data ?? []) as SupabaseAppointmentServiceRow[],
+    )
+    setData(current => ({ ...current, appointments }))
+    setSyncStatus('synced')
+    return true
+  }
+
+  async function refreshAdminServerState() {
+    await Promise.all([loadAdminInbox(), loadAdminAppointments()])
+  }
+
   useEffect(() => {
     async function load() {
       await loadAdminInbox()
@@ -590,25 +590,33 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     const supabaseClient = supabase
     if (!supabaseClient) return
+    const refreshAll = (notify = true) => {
+      void loadAdminInbox(notify)
+      void loadAdminAppointments()
+    }
     const channel = supabaseClient
       .channel('admin-client-requests')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'client_requests' }, () => {
-        void loadAdminInbox(true)
-        void loadSupabaseClients()
+        refreshAll(true)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-        void loadSupabaseClients()
+        void loadAdminAppointments()
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
         void loadAdminInbox(true)
       })
       .subscribe()
-    const refreshOnFocus = () => void loadAdminInbox(true)
+    const refreshOnFocus = () => refreshAll(true)
     window.addEventListener('focus', refreshOnFocus)
-    const poll = window.setInterval(() => void loadAdminInbox(true), 3000)
+    const refreshOnVisibility = () => {
+      if (document.visibilityState === 'visible') refreshAll(true)
+    }
+    document.addEventListener('visibilitychange', refreshOnVisibility)
+    const poll = window.setInterval(() => refreshAll(true), 3000)
     return () => {
       window.clearInterval(poll)
       window.removeEventListener('focus', refreshOnFocus)
+      document.removeEventListener('visibilitychange', refreshOnVisibility)
       void supabaseClient.removeChannel(channel)
     }
   }, [])
@@ -968,7 +976,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     update({ ...data, appointments: upsertAppointment(data.appointments, appointment) }, supabase ? 'Termin je sinkroniziran.' : 'Termin je lokalno spremljen.')
     const client = data.clients.find(item => item.id === appointment.clientId)
     const nextPortal: PortalData = { ...portal, notifications: replaceAppointmentReminders(portal.notifications, appointment, client) }
-    if (sourceRequestId) await loadAdminInbox()
+    if (sourceRequestId) await refreshAdminServerState()
     updatePortal(nextPortal); setSourceRequestId(''); setAppointmentForm(null)
   }
   function replyToRequest(requestId: string, status: 'u_razgovoru' | 'odbijeno') {
@@ -1091,7 +1099,9 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     await refreshTreatmentArchives()
     setNotice(item.visibleToClient ? 'Fotografije su skrivene od klijenta.' : 'Fotografije su vidljive klijentu.')
   }
-  const inboxCounts = adminInboxCounts(adminRequests, adminMessages)
+  const activeAdminRequests = adminRequests.filter(request =>
+    request.status === 'pending' || request.status === 'in_review')
+  const inboxCounts = adminInboxCounts(activeAdminRequests, adminMessages)
   useEffect(() => {
     const badgeNavigator = navigator as Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
     const total = inboxCounts.requests + inboxCounts.messages
@@ -1134,7 +1144,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       {view === 'arhiva' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INSPIRACIJA I POVIJEST</p><h2>Arhiva frizura</h2></div><button className="primary" onClick={() => { setArchiveFiles([]); setArchiveOpen(true) }}>+ Dodaj tretman</button></div>{archiveProgress&&<p className="archive-progress" role="status">{archiveProgress}</p>}<div className="gallery">{supabase?treatmentArchives.map(entry => <article className="treatment-archive-card" key={entry.id}><div className="treatment-photo-grid">{entry.photos.map(photo=><figure key={photo.id}><a href={photo.imageUrl} target="_blank" rel="noreferrer"><img src={photo.thumbnailUrl||photo.imageUrl} alt={photo.phase==='before'?'Prije tretmana':'Poslije tretmana'} /></a><figcaption>{photo.phase==='before'?'Prije':'Poslije'}</figcaption><div className="archive-photo-actions"><label className="link">Zamijeni<input type="file" accept="image/*,.heic,.heif" onChange={event=>void replaceArchivePhoto(entry,photo.id,event.target.files?.[0])}/></label><button className="link danger-link" type="button" onClick={()=>void removeArchivePhoto(entry,photo.id)}>Obriši</button></div></figure>)}</div><div><small>{formatDate(entry.takenAt)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.notes}</p><button className="link" onClick={()=>void toggleArchiveVisibility(entry)}>{entry.visibleToClient?'Sakrij od klijenta':'Podijeli s klijentom'}</button></div></article>):data.hairstyles.map(entry => <article key={entry.id}><div className="photo-pair"><figure><img src={entry.before.thumb} alt="Prije" /><figcaption>Prije</figcaption></figure>{entry.after&&<figure><img src={entry.after.thumb} alt="Poslije" /><figcaption>Poslije</figcaption></figure>}</div><div><small>{formatDate(entry.date)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.note}</p></div></article>)}</div></section>}
       {view === 'postavke' && <section className="panel settings-panel"><div className="panel-head"><div><p className="eyebrow">SIGURNOST</p><h2>Postavke</h2></div></div><div className="settings-list"><div><div><strong>Administratorski PIN</strong><p>Postavite ili promijenite PIN koji štiti arhivu termina.</p></div><button className="secondary" type="button" onClick={()=>void openAdminPinSettings()}>{adminPinSet===false?'Postavi PIN':'Postavi ili promijeni PIN'}</button></div><div><div><strong>Arhiva termina</strong><p>Pregled prošlih termina zaštićen administratorskim PIN-om.</p></div><button className="secondary" type="button" onClick={()=>void openAppointmentArchive()}>Otvori arhivu</button></div></div></section>}
       {view === 'arhiva-termina' && appointmentArchiveUnlocked && <section className="panel appointment-archive"><div className="panel-head"><div><p className="eyebrow">ZAŠTIĆENI PREGLED</p><h2>Arhiva termina</h2></div><button className="secondary" type="button" onClick={()=>setView('postavke')}>Natrag</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{pastAppointments.map(item=><tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.noCharge?'no-charge':item.status}`}>{item.noCharge?'Privatno / gratis – bez naplate':appointmentStatusLabel(item.status)}</span></td><td><button className="link" type="button" onClick={()=>setAppointmentForm(item)}>Uredi</button></td></tr>)}</tbody></table>{pastAppointments.length===0&&<p className="empty-state">Nema evidentiranih prošlih termina.</p>}</div></section>}
-      {view === 'zahtjevi-live' && <AdminRequestInbox requests={adminRequests} selected={selectedAdminRequest} busy={inboxBusy} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
+      {view === 'zahtjevi-live' && <AdminRequestInbox requests={activeAdminRequests} selected={selectedAdminRequest} busy={inboxBusy} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
       {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
     <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}
