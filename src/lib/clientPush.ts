@@ -30,7 +30,28 @@ export function savedMessagePushNotice(outcome: ClientPushOutcome) {
 }
 
 export const CLIENT_MESSAGES_HASH = '#/client/messages'
+export const CLIENT_MESSAGE_NOTIFICATION_TAG = 'salon-kristina-message'
 
 export function isClientMessagesLocation(hash: string) {
   return hash === CLIENT_MESSAGES_HASH
+}
+
+interface PushServiceWorkerContainer {
+  ready: Promise<{ active: { postMessage: (message: unknown) => void } | null }>
+}
+
+export async function closeReadClientMessageNotifications(
+  serviceWorker: PushServiceWorkerContainer | undefined =
+    'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+) {
+  if (!serviceWorker) return
+  try {
+    const registration = await serviceWorker.ready
+    registration.active?.postMessage({
+      type: 'CLIENT_MESSAGES_READ',
+      tag: CLIENT_MESSAGE_NOTIFICATION_TAG,
+    })
+  } catch {
+    // Service worker messaging is optional and must not interrupt message reading.
+  }
 }

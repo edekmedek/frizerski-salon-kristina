@@ -25,17 +25,55 @@ Deno.serve(async request => {
     const caller = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } })
     const { data: userData, error: userError } = await caller.auth.getUser()
     if (userError || !userData.user) throw new Error('Not authenticated')
+    const requestBody = await request.json()
+    const admin = createClient(url, serviceKey)
+
+    if (requestBody.action === 'deduplicate-client-subscriptions') {
+      const { data: ownClient, error: clientError } = await caller
+        .from('clients')
+        .select('id')
+        .eq('user_id', userData.user.id)
+        .eq('is_active', true)
+        .maybeSingle()
+      if (clientError || !ownClient) throw new Error('Not authorized')
+
+      const { data: ownSubscriptions, error: subscriptionsError } = await admin
+        .from('client_push_subscriptions')
+        .select('id')
+        .eq('client_id', ownClient.id)
+        .order('updated_at', { ascending: false })
+      if (subscriptionsError) throw subscriptionsError
+
+      const staleIds = (ownSubscriptions ?? []).slice(1).map(subscription => subscription.id)
+      if (staleIds.length) {
+        const { error: cleanupError } = await admin
+          .from('client_push_subscriptions')
+          .delete()
+          .eq('client_id', ownClient.id)
+          .in('id', staleIds)
+        if (cleanupError) throw cleanupError
+      }
+      return new Response(JSON.stringify({
+        subscriptionsFound: ownSubscriptions?.length ?? 0,
+        retained: ownSubscriptions?.length ? 1 : 0,
+        removed: staleIds.length,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { data: role } = await caller.from('user_roles').select('role').eq('user_id', userData.user.id).maybeSingle()
     if (role?.role !== 'admin') throw new Error('Not authorized')
 
-    const { clientId, tag } = await request.json()
+    const { clientId, tag } = requestBody
     if (!clientId) throw new Error('clientId is required')
 
-    const admin = createClient(url, serviceKey)
     const { data: subscriptions, error } = await admin
       .from('client_push_subscriptions')
       .select('id,endpoint,p256dh,auth')
       .eq('client_id', clientId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
     if (error) throw error
     const { count: unreadCount, error: unreadError } = await admin
       .from('messages')

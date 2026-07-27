@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
 import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
 import { countClientUnreadMessages, subscribeToAppForeground, updateAppBadge } from './lib/appBadge'
-import { isClientMessagesLocation } from './lib/clientPush'
+import { closeReadClientMessageNotifications, isClientMessagesLocation } from './lib/clientPush'
 import './Portal.css'
 
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos'
@@ -23,6 +23,13 @@ function urlBase64ToUint8Array(value: string) {
   const padding = '='.repeat((4 - value.length % 4) % 4)
   const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')
   return Uint8Array.from(atob(base64), character => character.charCodeAt(0))
+}
+
+async function removeOlderClientPushSubscriptions() {
+  if (!supabase) return
+  await supabase.functions.invoke('send-web-push', {
+    body: { action: 'deduplicate-client-subscriptions' },
+  })
 }
 
 export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogout: () => void }) {
@@ -66,7 +73,18 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     }
     void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}push-sw.js`)
       .then(registration => registration.pushManager.getSubscription())
-      .then(subscription => setPushState(subscription ? 'enabled' : 'available'))
+      .then(async subscription => {
+        setPushState(subscription ? 'enabled' : 'available')
+        if (!subscription || !supabase) return
+        const serialized = subscription.toJSON()
+        await supabase.rpc('client_save_push_subscription', {
+          push_endpoint: serialized.endpoint,
+          push_p256dh: serialized.keys?.p256dh,
+          push_auth: serialized.keys?.auth,
+          push_user_agent: navigator.userAgent,
+        })
+        await removeOlderClientPushSubscriptions()
+      })
       .catch(() => setPushState('unsupported'))
   }, [])
 
@@ -94,6 +112,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         push_user_agent: navigator.userAgent,
       })
       if (error) throw error
+      await removeOlderClientPushSubscriptions()
       setPushState('enabled')
       setNotice('Obavijesti su uključene i mogu stizati kada je aplikacija zatvorena.')
     } catch (error) {
@@ -252,7 +271,9 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
 
         const nextMessages = (data ?? []) as MessageRow[]
         setMessages(nextMessages)
-        await updateAppBadge(countClientUnreadMessages(nextMessages))
+        const nextUnreadCount = countClientUnreadMessages(nextMessages)
+        if (nextUnreadCount === 0) await closeReadClientMessageNotifications()
+        await updateAppBadge(nextUnreadCount)
       } finally {
         markingMessagesReadRef.current = false
       }

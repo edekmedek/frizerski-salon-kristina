@@ -34,3 +34,14 @@ self.addEventListener('notificationclick', event => {
     return self.clients.openWindow(target)
   })())
 })
+
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'CLIENT_MESSAGES_READ' || event.data?.tag !== 'salon-kristina-message') return
+  event.waitUntil((async () => {
+    const notifications = await self.registration.getNotifications({
+      tag: 'salon-kristina-message',
+    })
+    notifications.forEach(notification => notification.close())
+    if (self.registration.clearAppBadge) await self.registration.clearAppBadge()
+  })())
+})
