@@ -39,3 +39,20 @@ export async function updateAppBadge(unreadCount: number, badgeNavigator: BadgeN
     // Badging is an optional progressive enhancement and must never break the portal.
   }
 }
+
+export function subscribeToAppForeground(
+  refresh: () => void,
+  windowTarget: Pick<Window, 'addEventListener' | 'removeEventListener'> = window,
+  documentTarget: Pick<Document, 'addEventListener' | 'removeEventListener' | 'visibilityState'> = document,
+) {
+  const onFocus = () => refresh()
+  const onVisibilityChange = () => {
+    if (documentTarget.visibilityState === 'visible') refresh()
+  }
+  windowTarget.addEventListener('focus', onFocus)
+  documentTarget.addEventListener('visibilitychange', onVisibilityChange)
+  return () => {
+    windowTarget.removeEventListener('focus', onFocus)
+    documentTarget.removeEventListener('visibilitychange', onVisibilityChange)
+  }
+}

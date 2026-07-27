@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   countAdminUnreadItems,
   countClientUnreadMessages,
+  subscribeToAppForeground,
   updateAppBadge,
 } from './appBadge'
 
@@ -59,5 +60,38 @@ describe('app badge', () => {
     const setAppBadge = vi.fn().mockResolvedValue(undefined)
     await updateAppBadge(4, { setAppBadge })
     expect(setAppBadge).toHaveBeenCalledWith(4)
+  })
+
+  it('keeps the exact remaining count when only some messages are read', async () => {
+    const messages = [
+      { sender: 'admin', client_read_at: '2026-07-27T09:00:00Z' },
+      { sender: 'admin', client_read_at: null },
+      { sender: 'client', client_read_at: null },
+    ]
+    const setAppBadge = vi.fn().mockResolvedValue(undefined)
+    const unreadCount = countClientUnreadMessages(messages)
+    await updateAppBadge(unreadCount, { setAppBadge })
+    expect(unreadCount).toBe(1)
+    expect(setAppBadge).toHaveBeenCalledWith(1)
+  })
+
+  it('refreshes badge state when the app returns to the foreground', () => {
+    const refresh = vi.fn()
+    const windowTarget = new EventTarget()
+    const documentTarget = new EventTarget() as EventTarget & { visibilityState: DocumentVisibilityState }
+    Object.defineProperty(documentTarget, 'visibilityState', { value: 'visible', configurable: true })
+    const unsubscribe = subscribeToAppForeground(
+      refresh,
+      windowTarget as unknown as Window,
+      documentTarget as unknown as Document,
+    )
+
+    windowTarget.dispatchEvent(new Event('focus'))
+    documentTarget.dispatchEvent(new Event('visibilitychange'))
+    expect(refresh).toHaveBeenCalledTimes(2)
+
+    unsubscribe()
+    windowTarget.dispatchEvent(new Event('focus'))
+    expect(refresh).toHaveBeenCalledTimes(2)
   })
 })

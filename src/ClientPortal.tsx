@@ -3,7 +3,7 @@ import { formatDate, formatDateTime } from './lib/date'
 import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
 import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
-import { countClientUnreadMessages, updateAppBadge } from './lib/appBadge'
+import { countClientUnreadMessages, subscribeToAppForeground, updateAppBadge } from './lib/appBadge'
 import { isClientMessagesLocation } from './lib/clientPush'
 import './Portal.css'
 
@@ -51,6 +51,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const knownMessageIdsRef = useRef<Set<string>>(new Set())
   const knownRequestVersionsRef = useRef<Map<string, string>>(new Map())
   const messagesInitializedRef = useRef(false)
+  const markingMessagesReadRef = useRef(false)
   const [portalNow] = useState(() => Date.now())
   const upcoming = useMemo(() => appointments.filter(item => item.status === 'confirmed' && new Date(item.starts_at).getTime() >= portalNow).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)), [appointments, portalNow])
   const visibleRequests = useMemo(() => requests.filter(item => item.status !== 'confirmed'), [requests])
@@ -215,22 +216,48 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         void refreshRequestsAndAppointments()
       })
       .subscribe()
-    const refreshOnFocus = () => void refreshRequestsAndAppointments()
-    window.addEventListener('focus', refreshOnFocus)
+    const unsubscribeForeground = subscribeToAppForeground(() => void refreshRequestsAndAppointments())
     const poll = window.setInterval(() => void refreshRequestsAndAppointments(), 3000)
     return () => {
       window.clearInterval(poll)
-      window.removeEventListener('focus', refreshOnFocus)
+      unsubscribeForeground()
       void supabaseClient.removeChannel(channel)
     }
   }, [clientId])
 
   useEffect(() => {
-    if (section !== 'messages' || !supabase || !messages.some(item => item.sender === 'admin' && !item.client_read_at)) return
-    void supabase.rpc('client_mark_admin_messages_read').then(({ data, error }) => {
-      if (!error && data) setMessages(current => current.map(item => item.sender === 'admin' && !item.client_read_at ? { ...item, client_read_at: String(data) } : item))
-    })
-  }, [section, messages])
+    const supabaseClient = supabase
+    if (
+      section !== 'messages'
+      || !supabaseClient
+      || markingMessagesReadRef.current
+      || !messages.some(item => item.sender === 'admin' && !item.client_read_at)
+    ) return
+
+    markingMessagesReadRef.current = true
+    void (async () => {
+      try {
+        const { error: markError } = await supabaseClient.rpc('client_mark_admin_messages_read')
+        if (markError) return
+
+        // RPC can legitimately return 0 after another device or refresh won the race.
+        // Re-read the authoritative state instead of treating 0 as a failed update.
+        const { data, error: refreshError } = await supabaseClient
+          .from('messages')
+          .select('id,sender,subject,message,is_read,read_at,client_read_at,created_at')
+          .eq('client_id', clientId)
+          .eq('deleted_by_client', false)
+          .order('created_at', { ascending: false })
+        if (refreshError) return
+
+        const nextMessages = (data ?? []) as MessageRow[]
+        setMessages(nextMessages)
+        await updateAppBadge(countClientUnreadMessages(nextMessages))
+      } finally {
+        markingMessagesReadRef.current = false
+      }
+    })()
+  }, [clientId, section, messages])
 
   useEffect(() => {
     const openNotificationTarget = () => {
