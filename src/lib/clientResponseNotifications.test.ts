@@ -16,7 +16,7 @@ describe('obavijesti o odgovoru na prijedlog termina', () => {
 
   it('admin prati promjenu verzije postojećeg zahtjeva i uključuje app badge', () => {
     expect(adminSource).toContain('hasNewUnreadAdminRequest')
-    expect(adminSource).toContain('setAppBadge')
+    expect(adminSource).toContain('updateAppBadge')
     expect(adminSource).toContain("'Novi prijedlog termina'")
   })
 

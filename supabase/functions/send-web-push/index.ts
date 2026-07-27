@@ -46,7 +46,7 @@ Deno.serve(async request => {
     const payload = JSON.stringify({
       title: title ?? 'Salon Kristina',
       body,
-      url: notificationUrl ?? '/frizerski-salon-kristina/',
+      url: notificationUrl ?? '/',
       tag: tag ?? 'salon-kristina-message',
       unreadCount: unreadCount ?? 1,
     })

@@ -1,7 +1,14 @@
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()))
+
 self.addEventListener('push', event => {
   const payload = event.data?.json() ?? {}
   event.waitUntil((async () => {
-    if (payload.unreadCount > 0 && self.registration.setAppBadge) await self.registration.setAppBadge(payload.unreadCount)
+    if (payload.unreadCount > 0 && self.registration.setAppBadge) {
+      await self.registration.setAppBadge(payload.unreadCount)
+    } else if (self.registration.clearAppBadge) {
+      await self.registration.clearAppBadge()
+    }
     await self.registration.showNotification(payload.title ?? 'Salon Kristina', {
       body: payload.body ?? 'Imate novu poruku.',
       icon: './favicon.svg',

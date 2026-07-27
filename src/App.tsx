@@ -6,12 +6,23 @@ import type { PortalSession } from './portalTypes'
 import { getPortalSession, setPortalSession } from './lib/portalStorage'
 import { useKeyboardViewport } from './lib/useKeyboardViewport'
 import { supabase } from './lib/supabase'
+import { updateAppBadge } from './lib/appBadge'
 import './KeyboardViewport.css'
 
 function App() {
   useKeyboardViewport()
   const [session, setSession] = useState<PortalSession | null>(() => getPortalSession())
   const [restoringSession, setRestoringSession] = useState(true)
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}push-sw.js`)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!restoringSession && !session) void updateAppBadge(0)
+  }, [restoringSession, session])
 
   useEffect(() => {
     const refresh = () => setSession(getPortalSession())
@@ -53,6 +64,7 @@ function App() {
 
   async function logout() {
     await supabase?.auth.signOut()
+    await updateAppBadge(0)
     setPortalSession(null)
     window.location.hash = '/'
   }

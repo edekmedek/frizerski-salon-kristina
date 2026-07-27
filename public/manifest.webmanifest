@@ -1,0 +1,19 @@
+{
+  "name": "Frizerski salon Kristina",
+  "short_name": "Salon Kristina",
+  "description": "Klijentski i administratorski portal Frizerskog salona Kristina",
+  "lang": "hr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6efe9",
+  "theme_color": "#4f332e",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

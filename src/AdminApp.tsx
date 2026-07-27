@@ -24,6 +24,7 @@ import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppoin
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
 import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
 import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppointmentServiceRow } from './lib/adminAppointmentSync'
+import { updateAppBadge } from './lib/appBadge'
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import './Portal.css'
@@ -1103,10 +1104,8 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     request.status === 'pending' || request.status === 'in_review')
   const inboxCounts = adminInboxCounts(activeAdminRequests, adminMessages)
   useEffect(() => {
-    const badgeNavigator = navigator as Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
     const total = inboxCounts.requests + inboxCounts.messages
-    if (total > 0) void badgeNavigator.setAppBadge?.(total)
-    else void badgeNavigator.clearAppBadge?.()
+    void updateAppBadge(total)
   }, [inboxCounts.requests, inboxCounts.messages])
   const title = view === 'arhiva-termina' ? 'Arhiva termina' : nav.find(item => item.id === view)?.label
   const todayCalendarDate = localDateString(new Date())

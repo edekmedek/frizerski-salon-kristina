@@ -3,6 +3,7 @@ import { formatDate, formatDateTime } from './lib/date'
 import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
 import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotifications'
+import { countClientUnreadMessages, updateAppBadge } from './lib/appBadge'
 import './Portal.css'
 
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos'
@@ -52,10 +53,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [portalNow] = useState(() => Date.now())
   const upcoming = useMemo(() => appointments.filter(item => item.status === 'confirmed' && new Date(item.starts_at).getTime() >= portalNow).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)), [appointments, portalNow])
   const visibleRequests = useMemo(() => requests.filter(item => item.status !== 'confirmed'), [requests])
-  const inboxCount = useMemo(() =>
-    messages.filter(item=>item.sender==='admin' && !item.client_read_at).length
-    + requests.filter(item=>item.status==='in_review').length,
-  [messages, requests])
+  const inboxCount = useMemo(() => countClientUnreadMessages(messages), [messages])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -234,9 +232,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   }, [section, messages])
 
   useEffect(() => {
-    const badgeNavigator = navigator as Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
-    if (inboxCount > 0) void badgeNavigator.setAppBadge?.(inboxCount)
-    else void badgeNavigator.clearAppBadge?.()
+    void updateAppBadge(inboxCount)
   }, [inboxCount])
 
   async function sendClientMessage(event: React.FormEvent<HTMLFormElement>) {
@@ -336,7 +332,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const priceCategories = [...new Set(priceList.map(item=>item.categoryName))]
   return <div className="client-portal">
     <header className="client-header"><div><p className="eyebrow">SALON KRISTINA</p><h1>Pozdrav, {client.first_name}</h1></div><button className="secondary" onClick={onLogout}>Odjava</button></header>
-    <nav className="client-nav"><button className={section==='home'?'active':''} onClick={()=>setSection('home')}>Pregled</button><button className={section==='appointments'?'active':''} onClick={()=>setSection('appointments')}>Termini</button><button className={section==='prices'?'active':''} onClick={()=>{setOpenPriceCategory('');setSection('prices')}}>Cjenik</button><button className={section==='messages'?'active':''} onClick={()=>setSection('messages')}>Poruke</button><button className={section==='photos'?'active':''} onClick={()=>setSection('photos')}>Fotografije</button></nav>
+    <nav className="client-nav"><button className={section==='home'?'active':''} onClick={()=>setSection('home')}>Pregled</button><button className={section==='appointments'?'active':''} onClick={()=>setSection('appointments')}>Termini</button><button className={section==='prices'?'active':''} onClick={()=>{setOpenPriceCategory('');setSection('prices')}}>Cjenik</button><button className={section==='messages'?'active':''} onClick={()=>setSection('messages')}>Poruke{inboxCount>0&&<b className="client-nav-count">{inboxCount}</b>}</button><button className={section==='photos'?'active':''} onClick={()=>setSection('photos')}>Fotografije</button></nav>
     <main className="client-content">
       {notice&&<p className="portal-notice" role="status">{notice}</p>}
       {section==='home'&&inboxCount>0&&<button className="unread-message-alert" type="button" onClick={()=>setSection('messages')}><span>💬</span><div><strong>{inboxCount===1?'Imate novu poruku':`Imate ${inboxCount} nove poruke`}</strong><small>Dodirnite za pregled poruka</small></div><b>{inboxCount}</b></button>}
