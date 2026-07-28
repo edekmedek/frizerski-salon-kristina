@@ -927,6 +927,49 @@
   border-radius: 7px;
 }
 
+.reschedule-unlocked-banner {
+  position: fixed;
+  right: 20px;
+  bottom: max(76px, calc(60px + env(safe-area-inset-bottom)));
+  z-index: 1005;
+  display: grid;
+  max-width: min(520px, calc(100vw - 32px));
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #8cbbb5;
+  border-radius: 14px;
+  background: #f4fffc;
+  box-shadow: 0 12px 32px rgba(41, 79, 87, .2);
+}
+
+.reschedule-unlocked-banner span,
+.reschedule-unlocked-banner em {
+  font-size: .8rem;
+}
+
+.reschedule-unlocked-banner em {
+  color: #8a302a;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.reschedule-unlocked-banner > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .reschedule-unlocked-banner {
+    right: 12px;
+    left: 12px;
+  }
+
+  .reschedule-unlocked-banner button {
+    min-height: 44px;
+  }
+}
+
 .request-draft-time,
 .request-draft-summary,
 .request-draft-controls {

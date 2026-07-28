@@ -6,6 +6,7 @@ const migration = readFileSync(
   'supabase/migrations/20260728_admin_reschedule_cancel_appointments.sql',
   'utf8',
 )
+const styles = readFileSync('src/AdminPortal.css', 'utf8')
 
 describe('administratorski detalji i pomicanje termina', () => {
   it('klik na termin otvara detalje bez neposredne promjene', () => {
@@ -15,22 +16,54 @@ describe('administratorski detalji i pomicanje termina', () => {
     expect(adminSource).toContain('Otkaži termin')
   })
 
-  it('pomicanje traži potvrdu i dopušta odustajanje bez spremanja', () => {
+  it('pomicanje traži potvrdu prije odglavljivanja i ne otvara ručni obrazac', () => {
     expect(adminSource).toContain(
-      'Termin je već zakazan. Želite li ga odglaviti i odabrati novi datum ili vrijeme?',
+      'Termin je već zakazan. Želite li ga odglaviti za pomicanje?',
     )
+    expect(adminSource).toContain('Termin je spreman za pomicanje')
+    expect(adminSource).not.toContain('title="Pomakni termin"')
     expect(adminSource).toContain('setRescheduleDraft(null)')
-    expect(adminSource).toContain(
-      "supabase.rpc('admin_reschedule_appointment'",
-    )
   })
 
-  it('prikazuje staro i novo vrijeme, završetak te traži override preklapanja', () => {
-    expect(adminSource).toContain('Staro vrijeme')
-    expect(adminSource).toContain('Novo vrijeme')
-    expect(adminSource).toContain('Završetak')
+  it('pointer/touch drag mijenja samo preview i drop tek tada pokreće potvrdu', () => {
+    expect(adminSource).toContain('onPointerDown=')
+    expect(adminSource).toContain('onPointerMove={move}')
+    expect(adminSource).toContain('onPointerUp=')
+    expect(adminSource).toContain('onPointerCancel=')
+    expect(adminSource).toContain('onDrop?.(latestAppointmentRef.current)')
+    expect(styles).toContain('touch-action: none')
+    expect(adminSource).toContain("supabase.rpc('admin_reschedule_appointment'")
+    expect(adminSource).toContain('await loadAdminAppointments()')
+  })
+
+  it('snapa preview na kalendarski slot i zadržava izvorno trajanje', () => {
+    expect(adminSource).toContain(
+      'timeFromCalendarPosition(event.clientY-bounds.top,bounds.height)',
+    )
+    expect(adminSource).toContain('const duration=appointment.serviceDuration||60')
+    expect(adminSource).toContain('height:`max(${layout.heightPercent}%, 62px)`')
+  })
+
+  it('drop prikazuje staro, novo i završno vrijeme te traži override preklapanja', () => {
+    expect(adminSource).toContain('Staro: ${formatDateTime(original.dateTime)}')
+    expect(adminSource).toContain('Novo: ${formatDateTime(droppedAppointment.dateTime)}')
+    expect(adminSource).toContain('Završetak: ${end}')
     expect(adminSource).toContain('allow_overlap: overlapAllowed')
     expect(adminSource).toContain('Novo vrijeme preklapa se s')
+    expect(adminSource).toContain('conflictSummary')
+  })
+
+  it('odustajanje ili RPC greška vraćaju preview na izvorni položaj', () => {
+    expect(adminSource).toContain('const restoreOriginalPreview = () =>')
+    expect(adminSource).toContain('restoreOriginalPreview()')
+    expect(adminSource).toContain('setSelectedCalendarDate(original.dateTime.slice(0, 10))')
+    expect(adminSource).toContain('setRescheduleDraft({ ...original })')
+  })
+
+  it('jednodnevni kalendar omogućuje promjenu dana bez ručnog unosa vremena', () => {
+    expect(adminSource).toContain('Prethodni dan')
+    expect(adminSource).toContain('Sljedeći dan')
+    expect(adminSource).toContain('calendarDateAfterMove(selectedCalendarDate')
   })
 
   it('RPC čuva tretmane i računa novi završetak iz snapshot trajanja', () => {
@@ -43,6 +76,16 @@ describe('administratorski detalji i pomicanje termina', () => {
     )
     expect(migration).not.toMatch(
       /update\s+public\.appointment_services/i,
+    )
+  })
+
+  it('pending, cancelled i completed termini ne postaju draggable', () => {
+    expect(adminSource).toContain(
+      "appointment.status !== 'zakazan' || appointment.confirmationStatus === 'pending'",
+    )
+    expect(migration).toContain("locked_appointment.status <> 'confirmed'")
+    expect(migration).toContain(
+      "locked_appointment.confirmation_status <> 'confirmed'",
     )
   })
 })
