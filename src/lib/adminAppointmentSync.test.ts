@@ -55,6 +55,6 @@ describe('osvježavanje administratorskog kalendara', () => {
     }], [])
     expect(appointment.status).toBe('zakazan')
     expect(appointment.confirmationStatus).toBe('pending')
-    expect(appointment.service).toContain('Čeka potvrdu')
+    expect(appointment.service).toBe('Termin bez tretmana')
   })
 })

@@ -55,7 +55,7 @@ export function mapSupabaseAppointments(
       id: item.id,
       clientId: item.client_id,
       dateTime: localDateTimeValue(item.starts_at),
-      service: `${item.confirmation_status === 'pending' ? '⏳ Čeka potvrdu · ' : ''}${item.service_name_snapshot ?? item.service ?? 'Termin bez tretmana'}`,
+      service: item.service_name_snapshot || item.service || 'Termin bez tretmana',
       serviceId: item.service_id ?? undefined,
       servicePrice: item.total_price_snapshot == null
         ? item.service_price_snapshot == null ? undefined : Number(item.service_price_snapshot)

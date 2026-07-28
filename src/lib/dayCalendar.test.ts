@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calendarEventLayout, calendarTimeMarks, calendarWorkingHours, calendarWorkingHoursLabel, timeFromCalendarPosition } from './dayCalendar'
+import { calendarEventLayout, calendarOverlapDepth, calendarTimeMarks, calendarWorkingHours, calendarWorkingHoursLabel, timeFromCalendarPosition } from './dayCalendar'
 
 describe('dnevni kalendar', () => {
   it('postavlja termin na stvarni položaj i koristi 30 minuta bez trajanja', () => {
@@ -24,6 +24,17 @@ describe('dnevni kalendar', () => {
     expect(marks[0]).toMatchObject({ label: '07:00', isHour: true })
     expect(marks[1]).toMatchObject({ label: '07:30', isHour: false })
     expect(marks.at(-1)).toMatchObject({ label: '22:00', isHour: true })
+  })
+
+  it('prepoznaje preklapanje i označava samo gornji termin dubinom', () => {
+    const appointments = [
+      { dateTime: '2026-07-28T12:00', serviceDuration: 60 },
+      { dateTime: '2026-07-28T12:30', serviceDuration: 30 },
+      { dateTime: '2026-07-28T14:00', serviceDuration: 30 },
+    ]
+    expect(calendarOverlapDepth(appointments, 0)).toEqual({ overlaps: true, depth: 0 })
+    expect(calendarOverlapDepth(appointments, 1)).toEqual({ overlaps: true, depth: 1 })
+    expect(calendarOverlapDepth(appointments, 2)).toEqual({ overlaps: false, depth: 0 })
   })
 
   it('prikazuje službeno radno vrijeme kao vizualnu smjernicu', () => {

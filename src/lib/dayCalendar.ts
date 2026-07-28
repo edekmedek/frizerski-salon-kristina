@@ -50,6 +50,37 @@ export function calendarEventLayout(dateTime: string, durationMinutes?: number) 
   }
 }
 
+export interface CalendarAppointmentLike {
+  dateTime: string
+  serviceDuration?: number
+}
+
+export function calendarAppointmentsOverlap(
+  left: CalendarAppointmentLike,
+  right: CalendarAppointmentLike,
+) {
+  const leftStart = minutesFromDateTime(left.dateTime)
+  const rightStart = minutesFromDateTime(right.dateTime)
+  const leftEnd = leftStart + (left.serviceDuration && left.serviceDuration > 0 ? left.serviceDuration : 30)
+  const rightEnd = rightStart + (right.serviceDuration && right.serviceDuration > 0 ? right.serviceDuration : 30)
+  return leftStart < rightEnd && rightStart < leftEnd
+}
+
+export function calendarOverlapDepth(
+  appointments: CalendarAppointmentLike[],
+  targetIndex: number,
+) {
+  const target = appointments[targetIndex]
+  if (!target) return { overlaps: false, depth: 0 }
+  const overlappingIndexes = appointments
+    .map((item, index) => ({ item, index }))
+    .filter(({ item, index }) => index !== targetIndex && calendarAppointmentsOverlap(item, target))
+  return {
+    overlaps: overlappingIndexes.length > 0,
+    depth: overlappingIndexes.filter(({ index }) => index < targetIndex).length,
+  }
+}
+
 export function timeFromCalendarPosition(offsetY: number, calendarHeight: number) {
   const ratio = calendarHeight > 0 ? Math.min(1, Math.max(0, offsetY / calendarHeight)) : 0
   const rawMinutes = CALENDAR_START_MINUTES + ratio * CALENDAR_DURATION_MINUTES

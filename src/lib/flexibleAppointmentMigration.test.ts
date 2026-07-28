@@ -7,7 +7,6 @@ const migration = readFileSync(
 )
 const adminSource = readFileSync('src/AdminApp.tsx', 'utf8')
 const clientSource = readFileSync('src/ClientPortal.tsx', 'utf8')
-const appointmentMapperSource = readFileSync('src/lib/adminAppointmentSync.ts', 'utf8')
 
 describe('normalized appointment confirmation phase A', () => {
   it('separates lifecycle and confirmation state', () => {
@@ -35,9 +34,9 @@ describe('normalized appointment confirmation phase A', () => {
     expect(migration).not.toContain('add column if not exists service_ids')
     expect(migration).not.toContain('add column if not exists service_names')
     expect(clientSource).toContain('requested_service_ids: requestServiceIds')
-    expect(migration).toContain(
-      "request_kind = 'appointment' and cardinality(requested_ids) = 0",
-    )
+    expect(migration).toContain("and cardinality(requested_ids) = 0")
+    expect(migration).toContain("'At least one preferred date is required'")
+    expect(migration).toContain('if cardinality(requested_ids) > 0 then')
     expect(migration).toContain(
       "'public.client_submit_request(text,text,date[],text,text,uuid)'",
     )
@@ -61,7 +60,7 @@ describe('normalized appointment confirmation phase A', () => {
       "set status = 'cancelled', confirmation_status = 'confirmed'",
     )
     expect(adminSource).toContain('Potvrdi termin odmah')
-    expect(appointmentMapperSource).toContain('Čeka potvrdu')
+    expect(adminSource).toContain("'Čeka potvrdu'")
     expect(clientSource).not.toContain('use_reserved_appointment')
   })
 

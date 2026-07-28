@@ -14,6 +14,9 @@ describe('administratorska navigacija', () => {
     expect(source).toContain('const requestedDate = request.preferredDates[0]')
     expect(source).toContain('await requestCalendarDate(requestedDate)')
     expect(source).toContain("setView('pregled')")
+    expect(source).toContain('requestNeedsScrollRef.current = true')
+    expect(source).toContain("scrollIntoView({ block: 'center'")
+    expect(source).toContain('ref={requestDraftRef}')
   })
 
   it('prikazuje zahtjev kao pomični blok proporcionalan trajanju i dopušta preklapanje', () => {
@@ -25,5 +28,7 @@ describe('administratorska navigacija', () => {
     expect(source).toContain('sendSelectedRequestProposal')
     expect(source).toContain('Pošalji prijedlog termina')
     expect(source).toContain('item.serviceDuration')
+    expect(source).toContain('calendarOverlapDepth(calendarAppointments,index)')
+    expect(source).toContain("'overlap-top'")
   })
 })

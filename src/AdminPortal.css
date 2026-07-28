@@ -708,6 +708,26 @@
   box-shadow: 0 2px 8px #49342c18;
 }
 
+.calendar-event.pending-confirmation {
+  opacity: .68;
+  border-left-style: dashed;
+  box-shadow: inset 0 0 0 1px #9a725f66, 0 2px 8px #49342c14;
+}
+
+.calendar-event.has-overlap {
+  border-right: 2px solid #8f654f;
+}
+
+.calendar-event.overlap-top {
+  z-index: 4;
+  opacity: .88;
+  box-shadow: -5px 3px 10px #49342c2b;
+}
+
+.calendar-event.pending-confirmation.overlap-top {
+  opacity: .58;
+}
+
 .request-draft-event {
   position: absolute;
   right: 10px;
@@ -920,6 +940,26 @@
   border-left-color: #73808a;
   background: #e8ecef;
   color: #46515a;
+}
+
+@media (min-width: 701px) and (max-width: 1180px) {
+  .day-calendar {
+    height: 900px;
+  }
+
+  .calendar-event {
+    min-height: 40px;
+    padding-block: 4px;
+  }
+
+  .calendar-event strong {
+    font-size: 12px;
+  }
+
+  .calendar-event time,
+  .calendar-event span {
+    font-size: 10px;
+  }
 }
 
 .badge.zavrsen {

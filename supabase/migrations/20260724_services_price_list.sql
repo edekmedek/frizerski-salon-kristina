@@ -237,7 +237,11 @@ order by category.display_order, category.name, service.display_order, service.n
 create or replace view public.bookable_service_prices
 with (security_invoker = false)
 as
-select category.name as category_name, service.name, service.price
+select category.name as category_name,
+       service.name,
+       service.price,
+       service.id,
+       service.duration_minutes
 from public.services service
 join public.service_categories category on category.id = service.category_id
 where category.is_active = true

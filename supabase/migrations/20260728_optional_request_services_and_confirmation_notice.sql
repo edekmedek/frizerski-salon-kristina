@@ -1,5 +1,26 @@
 begin;
 
+do $preflight$
+begin
+  if to_regclass('public.client_requests') is null
+    or to_regclass('public.client_request_services') is null
+    or to_regclass('public.services') is null
+    or to_regclass('public.messages') is null
+    or to_regprocedure(
+      'public.client_submit_request(text,text,date[],text,text,uuid,uuid[])'
+    ) is null
+  then
+    raise exception 'Preflight failed: required client portal objects are unavailable';
+  end if;
+end
+$preflight$;
+
+alter table public.messages
+  add column if not exists event_key text;
+
+create unique index if not exists messages_event_key_key
+  on public.messages (event_key);
+
 create or replace function public.client_submit_request(
   request_kind text,
   requested_service text,
@@ -102,17 +123,5 @@ revoke all on function public.client_submit_request(
 grant execute on function public.client_submit_request(
   text, text, date[], text, text, uuid, uuid[]
 ) to authenticated;
-
-do $legacy_client_submit_revoke$
-begin
-  if to_regprocedure(
-    'public.client_submit_request(text,text,date[],text,text,uuid)'
-  ) is not null then
-    revoke execute on function public.client_submit_request(
-      text, text, date[], text, text, uuid
-    ) from authenticated;
-  end if;
-end
-$legacy_client_submit_revoke$;
 
 commit;

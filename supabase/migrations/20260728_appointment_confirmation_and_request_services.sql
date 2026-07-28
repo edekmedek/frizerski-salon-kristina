@@ -224,7 +224,10 @@ begin
   if requested_day_period not in ('morning', 'afternoon', 'any') then
     raise exception 'Unsupported day period';
   end if;
-  if request_kind = 'appointment' and cardinality(requested_ids) = 0 then
+  if request_kind = 'appointment'
+    and cardinality(requested_ids) = 0
+    and nullif(btrim(requested_service), '') is not null
+  then
     select array_agg(service.id order by service.id), count(*)
     into requested_ids, selected_count
     from public.services service
@@ -241,16 +244,19 @@ begin
   ) then raise exception 'A service cannot be selected twice'; end if;
 
   if request_kind = 'appointment' then
-    if cardinality(requested_ids) = 0
-      or coalesce(cardinality(requested_dates), 0) = 0
-    then raise exception 'Services and at least one preferred date are required'; end if;
-    select count(*), string_agg(service.name, ' + ' order by selected.ordinality)
-    into selected_count, combined_names
-    from unnest(requested_ids) with ordinality selected(service_id, ordinality)
-    join public.services service on service.id = selected.service_id
-    where service.is_active and service.is_bookable;
-    if selected_count <> cardinality(requested_ids) then
-      raise exception 'One or more services are unavailable';
+    if coalesce(cardinality(requested_dates), 0) = 0
+    then raise exception 'At least one preferred date is required'; end if;
+    if cardinality(requested_ids) > 0 then
+      select count(*), string_agg(service.name, ' + ' order by selected.ordinality)
+      into selected_count, combined_names
+      from unnest(requested_ids) with ordinality selected(service_id, ordinality)
+      join public.services service on service.id = selected.service_id
+      where service.is_active and service.is_bookable;
+      if selected_count <> cardinality(requested_ids) then
+        raise exception 'One or more services are unavailable';
+      end if;
+    else
+      combined_names := null;
     end if;
   else
     combined_names := nullif(btrim(requested_service), '');
