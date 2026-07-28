@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   detectNotificationPlatform,
   getLastSuccessfulPushTest,
@@ -6,6 +7,8 @@ import {
 } from './notificationSetup'
 
 describe('guided notification setup', () => {
+  const clientPortalSource = readFileSync('src/ClientPortal.tsx', 'utf8')
+
   it('recognizes Samsung Android and installed PWA mode', () => {
     expect(detectNotificationPlatform({
       userAgent: 'Mozilla/5.0 (Linux; Android 16; SM-S921B)',
@@ -28,5 +31,17 @@ describe('guided notification setup', () => {
     }
     saveLastSuccessfulPushTest('2026-07-27T15:00:00.000Z', storage)
     expect(getLastSuccessfulPushTest(storage)).toBe('2026-07-27T15:00:00.000Z')
+  })
+
+  it('uses the active subscription state, not the last test timestamp, as readiness', () => {
+    expect(clientPortalSource).toContain(
+      "pushState==='enabled'?'🔔 Obavijesti uključene':'🔔 Uključi obavijesti'",
+    )
+    expect(clientPortalSource).toContain(
+      "await removeOlderClientPushSubscriptions(serialized.endpoint ?? '')",
+    )
+    expect(clientPortalSource).toContain(
+      "console.error('Probna push obavijest nije poslana.', { error, result })",
+    )
   })
 })

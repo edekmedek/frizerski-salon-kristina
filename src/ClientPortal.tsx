@@ -11,14 +11,14 @@ import './Portal.css'
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos' | 'notifications'
 type PushState = 'unsupported' | 'available' | 'enabled' | 'denied' | 'working'
 interface ClientRow { id: string; first_name: string; last_name: string }
-interface AppointmentRow { id: string; starts_at: string; ends_at: string | null; service: string | null; service_name_snapshot: string | null; service_price_snapshot: number | null; service_duration_snapshot: number | null; notes: string | null; status: string }
+interface AppointmentRow { id: string; starts_at: string; ends_at: string | null; service: string | null; service_name_snapshot: string | null; service_price_snapshot: number | null; service_duration_snapshot: number | null; notes: string | null; status: string; confirmation_status?: string }
 interface RequestRow { id: string; kind: string; service: string | null; preferred_dates: string[]; day_period: string; client_message: string; status: string; admin_reply: string; client_reply: string; proposed_starts_at: string | null; proposed_duration_minutes: number | null; appointment_id: string | null; created_at: string; updated_at: string }
 interface MessageRow { id: string; sender: string; subject?: string; message: string; is_read: boolean; read_at: string | null; client_read_at: string | null; created_at: string }
 interface ReminderRow { id: string; title: string; body: string; scheduled_for: string; status: string }
 interface TreatmentPhotoRow { id: string; image_path: string; thumbnail_path: string; phase: 'before' | 'after'; sort_order: number }
 interface TreatmentSetRow { id: string; client_id: string; notes: string | null; taken_at: string; visible_to_client: boolean; treatment_photos: TreatmentPhotoRow[] }
 interface ClientPhoto { id: string; phase: 'before' | 'after'; notes: string | null; taken_at: string; url: string }
-interface PublicService { categoryName: string; name: string; price: number }
+interface PublicService { id?: string; categoryName: string; name: string; price: number; durationMinutes?: number }
 
 function urlBase64ToUint8Array(value: string) {
   const padding = '='.repeat((4 - value.length % 4) % 4)
@@ -26,11 +26,12 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from(atob(base64), character => character.charCodeAt(0))
 }
 
-async function removeOlderClientPushSubscriptions() {
+async function removeOlderClientPushSubscriptions(activeEndpoint: string) {
   if (!supabase) return
-  await supabase.functions.invoke('send-web-push', {
-    body: { action: 'deduplicate-client-subscriptions' },
+  const { error } = await supabase.functions.invoke('send-web-push', {
+    body: { action: 'deduplicate-client-subscriptions', activeEndpoint },
   })
+  if (error) throw error
 }
 
 export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogout: () => void }) {
@@ -43,6 +44,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [priceList, setPriceList] = useState<PublicService[]>([])
   const [bookableServices, setBookableServices] = useState<PublicService[]>([])
   const [requestCategory, setRequestCategory] = useState('')
+  const [requestServiceIds, setRequestServiceIds] = useState<string[]>([])
   const [openPriceCategory, setOpenPriceCategory] = useState('')
   const [section, setSection] = useState<Section>(() => isClientMessagesLocation(window.location.hash) ? 'messages' : isClientNotificationsLocation(window.location.hash) ? 'notifications' : 'home')
   const [detail, setDetail] = useState<AppointmentRow | null>(null)
@@ -65,33 +67,56 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const messagesInitializedRef = useRef(false)
   const markingMessagesReadRef = useRef(false)
   const [portalNow] = useState(() => Date.now())
-  const upcoming = useMemo(() => appointments.filter(item => item.status === 'confirmed' && new Date(item.starts_at).getTime() >= portalNow).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)), [appointments, portalNow])
+  const upcoming = useMemo(() => appointments.filter(item => item.status === 'confirmed' && item.confirmation_status !== 'pending' && new Date(item.starts_at).getTime() >= portalNow).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)), [appointments, portalNow])
   const visibleRequests = useMemo(() => requests.filter(item => item.status !== 'confirmed'), [requests])
   const inboxCount = useMemo(() => countClientUnreadMessages(messages), [messages])
 
   useEffect(() => {
+    let active = true
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
       return
     }
     if (Notification.permission === 'denied') {
       return
     }
-    void registerSalonPushWorker()
-      .then(registration => registration.pushManager?.getSubscription())
-      .then(async subscription => {
-        setServiceWorkerActive(true)
-        setPushState(subscription ? 'enabled' : 'available')
-        if (!subscription || !supabase) return
+
+    async function refreshPushState() {
+      try {
+        const registration = await registerSalonPushWorker()
+        const subscription = await registration.pushManager?.getSubscription()
+        if (!active) return
+        setServiceWorkerActive(Boolean(registration.active))
+        if (!subscription || !supabase) {
+          setPushState('available')
+          return
+        }
         const serialized = subscription.toJSON()
-        await supabase.rpc('client_save_push_subscription', {
+        const { error } = await supabase.rpc('client_save_push_subscription', {
           push_endpoint: serialized.endpoint,
           push_p256dh: serialized.keys?.p256dh,
           push_auth: serialized.keys?.auth,
           push_user_agent: navigator.userAgent,
         })
-        await removeOlderClientPushSubscriptions()
-      })
-      .catch(() => setPushState('unsupported'))
+        if (error) throw error
+        await removeOlderClientPushSubscriptions(serialized.endpoint ?? '')
+        if (active) setPushState('enabled')
+      } catch (error) {
+        console.error('Provjera push pretplate nije uspjela.', error)
+        if (active) setPushState(Notification.permission === 'denied' ? 'denied' : 'available')
+      }
+    }
+
+    void refreshPushState()
+    const refreshOnForeground = () => {
+      if (document.visibilityState === 'visible') void refreshPushState()
+    }
+    window.addEventListener('focus', refreshOnForeground)
+    document.addEventListener('visibilitychange', refreshOnForeground)
+    return () => {
+      active = false
+      window.removeEventListener('focus', refreshOnForeground)
+      document.removeEventListener('visibilitychange', refreshOnForeground)
+    }
   }, [])
 
   async function enablePushNotifications() {
@@ -118,7 +143,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         push_user_agent: navigator.userAgent,
       })
       if (error) throw error
-      await removeOlderClientPushSubscriptions()
+      await removeOlderClientPushSubscriptions(serialized.endpoint ?? '')
       setPushState('enabled')
       setNotice('Obavijesti su uključene i mogu stizati kada je aplikacija zatvorena.')
     } catch (error) {
@@ -136,6 +161,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     setPushTestBusy(false)
     const result = data as { sent?: number } | null
     if (error || result?.sent !== 1) {
+      console.error('Probna push obavijest nije poslana.', { error, result })
       setNotice('Probna obavijest nije poslana. Provjerite upute za uređaj.')
       return
     }
@@ -174,13 +200,13 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       if (!supabaseClient) return
       const [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult, pricesResult, bookableResult] = await Promise.all([
         supabaseClient.from('clients').select('id,first_name,last_name').eq('id', clientId).maybeSingle(),
-        supabaseClient.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status').eq('client_id', clientId),
+        supabaseClient.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status,confirmation_status').eq('client_id', clientId),
         supabaseClient.from('client_requests').select('id,kind,service,preferred_dates,day_period,client_message,status,admin_reply,client_reply,proposed_starts_at,proposed_duration_minutes,appointment_id,created_at,updated_at').eq('client_id', clientId),
         supabaseClient.from('messages').select('id,sender,subject,message,is_read,read_at,client_read_at,created_at').eq('client_id', clientId).eq('deleted_by_client', false).order('created_at', { ascending: false }),
         supabaseClient.from('appointment_reminders').select('id,title,body,scheduled_for,status').eq('client_id', clientId).eq('status', 'delivered').order('scheduled_for', { ascending: false }),
         supabaseClient.from('treatment_photo_sets').select('id,client_id,notes,taken_at,visible_to_client,treatment_photos(id,image_path,thumbnail_path,phase,sort_order)').eq('client_id', clientId).eq('visible_to_client', true).order('taken_at', { ascending: false }),
         supabaseClient.from('active_service_prices').select('category_name,name,price'),
-        supabaseClient.from('bookable_service_prices').select('category_name,name,price'),
+        supabaseClient.from('bookable_service_prices').select('id,category_name,name,price,duration_minutes'),
       ])
       const firstError = [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult, pricesResult, bookableResult].find(result => result.error)?.error
       if (firstError) {
@@ -205,7 +231,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       setReminders((reminderResult.data ?? []) as ReminderRow[])
       setPhotos(signedPhotos.filter(photo => photo.url))
       setPriceList((pricesResult.data ?? []).map(item=>({categoryName:item.category_name,name:item.name,price:Number(item.price)})))
-      setBookableServices((bookableResult.data ?? []).map(item=>({categoryName:item.category_name,name:item.name,price:Number(item.price)})))
+      setBookableServices((bookableResult.data ?? []).map(item=>({id:item.id,categoryName:item.category_name,name:item.name,price:Number(item.price),durationMinutes:item.duration_minutes??undefined})))
       setLoading(false)
     }
     void load()
@@ -219,7 +245,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       if (!supabase) return
       const [requestResult, appointmentResult, messageResult] = await Promise.all([
         supabase.from('client_requests').select('id,kind,service,preferred_dates,day_period,client_message,status,admin_reply,client_reply,proposed_starts_at,proposed_duration_minutes,appointment_id,created_at,updated_at').eq('client_id', clientId),
-        supabase.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status').eq('client_id', clientId),
+        supabase.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status,confirmation_status').eq('client_id', clientId),
         supabase.from('messages').select('id,sender,subject,message,is_read,read_at,client_read_at,created_at').eq('client_id', clientId).eq('deleted_by_client', false).order('created_at', { ascending: false }),
       ])
       if (!requestResult.error) {
@@ -342,16 +368,24 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     const form = new FormData(event.currentTarget)
     const preferredDates = form.getAll('preferredDates').map(String).filter(Boolean)
     if (!preferredDates.length) { setNotice('Dodajte barem jedan poželjni dan.'); return }
+    if (!requestServiceIds.length) { setNotice('Odaberite barem jedan tretman.'); return }
+    const selectedServices = bookableServices.filter(item => item.id && requestServiceIds.includes(item.id))
     const { data, error } = await supabase.rpc('client_submit_request', {
       request_kind: 'appointment',
-      requested_service: String(form.get('service')),
+      requested_service: selectedServices.map(item=>item.name).join(' + '),
+      requested_service_ids: requestServiceIds,
       requested_dates: preferredDates,
       requested_day_period: String(form.get('dayPeriod')),
       request_message: String(form.get('message') || ''),
       related_appointment_id: null,
     })
-    if (error) { setNotice('Zahtjev nije bilo moguće poslati.'); return }
+    if (error) {
+      console.error('client_submit_request nije uspio.', error)
+      setNotice(`Zahtjev nije poslan: ${error.message || 'Supabase nije prihvatio zahtjev.'}`)
+      return
+    }
     setRequests(current => [data as RequestRow, ...current])
+    setRequestServiceIds([])
     setNotice('Zahtjev poslan.')
     setSection('home')
   }
@@ -367,8 +401,13 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       requested_day_period: 'any',
       request_message: text,
       related_appointment_id: appointment.id,
+      requested_service_ids: [],
     })
-    if (error) { setNotice('Zahtjev nije bilo moguće poslati.'); return }
+    if (error) {
+      console.error('client_submit_request nije uspio.', error)
+      setNotice(`Zahtjev nije poslan: ${error.message || 'Supabase nije prihvatio zahtjev.'}`)
+      return
+    }
     setRequests(current => [data as RequestRow, ...current])
     setDetail(null)
     setNotice('Zahtjev je poslan. Termin se ne mijenja dok Kristina ne potvrdi.')
@@ -397,7 +436,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     if (accept) {
       const { data: refreshedAppointments } = await supabase
         .from('appointments')
-        .select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status')
+        .select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status,confirmation_status')
         .eq('client_id', clientId)
       setAppointments((refreshedAppointments ?? []) as AppointmentRow[])
       setNotice('Termin je potvrđen i dodan u vaše termine.')
@@ -418,9 +457,9 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     <main className="client-content">
       {notice&&<p className="portal-notice" role="status">{notice}</p>}
       {section==='home'&&inboxCount>0&&<button className="unread-message-alert" type="button" onClick={()=>setSection('messages')}><span>💬</span><div><strong>{inboxCount===1?'Imate novu poruku':`Imate ${inboxCount} nove poruke`}</strong><small>Dodirnite za pregled poruka</small></div><b>{inboxCount}</b></button>}
-      {section==='home'&&<><section className="client-hero"><p className="eyebrow">SLJEDEĆI POTVRĐENI TERMIN</p>{upcoming[0]?<><h2>{formatDateTime(upcoming[0].starts_at)}</h2><p>{appointmentService(upcoming[0])}</p><button className="link" onClick={()=>setDetail(upcoming[0])}>Detalji termina →</button></>:<><h2>Još nema potvrđenog termina</h2><p>Pošaljite želju, a Kristina će vam se javiti.</p></>}</section><button className="primary wide-action" onClick={()=>setSection('request')}>Pošalji želju za termin</button>{pushState!=='unsupported'&&<button className={`push-notification-button ${lastPushTestAt?'enabled':''}`} type="button" onClick={()=>setSection('notifications')}>{lastPushTestAt?'🔔 Obavijesti spremne':'🔔 Uključi obavijesti'}</button>}{visibleRequests.length>0&&<section className="client-request-status"><h2>Moji zahtjevi</h2>{visibleRequests.map(item=><article key={item.id}><strong>{item.service||'Zahtjev za termin'}</strong><span>{requestStatusLabel(item.status as 'pending'|'in_review'|'confirmed'|'rejected')}</span>{item.admin_reply&&<p>{item.admin_reply}</p>}{item.status==='in_review'&&item.proposed_starts_at&&<div className="client-proposal-actions"><button className="primary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,true)}>{respondingRequestId===item.id?'Spremanje…':'Potvrđujem termin'}</button><button className="secondary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,false)}>Zatraži novi prijedlog</button></div>}{item.client_reply&&<small>{item.client_reply}</small>}</article>)}</section>}<div className="client-summary"><button onClick={()=>setSection('appointments')}><strong>{upcoming.length}</strong><span>Budući termini</span></button><button onClick={()=>setSection('messages')}><strong>{inboxCount}</strong><span>Poruke salona</span></button><button onClick={()=>setSection('photos')}><strong>{photos.length}</strong><span>Moje fotografije</span></button></div></>}
+      {section==='home'&&<><section className="client-hero"><p className="eyebrow">SLJEDEĆI POTVRĐENI TERMIN</p>{upcoming[0]?<><h2>{formatDateTime(upcoming[0].starts_at)}</h2><p>{appointmentService(upcoming[0])}</p><button className="link" onClick={()=>setDetail(upcoming[0])}>Detalji termina →</button></>:<><h2>Još nema potvrđenog termina</h2><p>Pošaljite želju, a Kristina će vam se javiti.</p></>}</section><button className="primary wide-action" onClick={()=>setSection('request')}>Pošalji želju za termin</button>{pushState!=='unsupported'&&<button className={`push-notification-button ${pushState==='enabled'?'enabled':''}`} type="button" onClick={()=>setSection('notifications')}>{pushState==='enabled'?'🔔 Obavijesti uključene':'🔔 Uključi obavijesti'}</button>}{visibleRequests.length>0&&<section className="client-request-status"><h2>Moji zahtjevi</h2>{visibleRequests.map(item=><article key={item.id}><strong>{item.service||'Zahtjev za termin'}</strong><span>{requestStatusLabel(item.status as 'pending'|'in_review'|'confirmed'|'rejected')}</span>{item.admin_reply&&<p>{item.admin_reply}</p>}{item.status==='in_review'&&item.proposed_starts_at&&<div className="client-proposal-actions"><button className="primary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,true)}>{respondingRequestId===item.id?'Spremanje…':'Potvrđujem termin'}</button><button className="secondary" disabled={respondingRequestId===item.id} onClick={()=>void respondToProposal(item,false)}>Zatraži novi prijedlog</button></div>}{item.client_reply&&<small>{item.client_reply}</small>}</article>)}</section>}<div className="client-summary"><button onClick={()=>setSection('appointments')}><strong>{upcoming.length}</strong><span>Budući termini</span></button><button onClick={()=>setSection('messages')}><strong>{inboxCount}</strong><span>Poruke salona</span></button><button onClick={()=>setSection('photos')}><strong>{photos.length}</strong><span>Moje fotografije</span></button></div></>}
       {section==='home'&&pushState==='unsupported'&&<button className="push-notification-button" type="button" onClick={()=>setSection('notifications')}>🔔 Upute za obavijesti</button>}
-      {section==='request'&&<section className="client-card-section"><h2>Želja za termin</h2><p className="important-note">Ovo nije rezervacija. Kristina će pregledati vašu želju i potvrditi termin.</p><form onSubmit={event=>void saveRequest(event)}><label>Kategorija<select required value={requestCategory} onChange={event=>setRequestCategory(event.target.value)}><option value="" disabled>Odaberite kategoriju</option>{requestCategories.map(category=><option key={category} value={category}>{category}</option>)}</select></label><label>Željena usluga<select required name="service" defaultValue="" disabled={!requestCategory} key={requestCategory}><option value="" disabled>{requestCategory?'Odaberite uslugu':'Prvo odaberite kategoriju'}</option>{bookableServices.filter(item=>item.categoryName===requestCategory).map(item=><option key={item.name} value={item.name}>{item.name} — {item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</option>)}</select></label><fieldset><legend>Poželjni dani</legend><input required name="preferredDates" type="date"/><input name="preferredDates" type="date"/><input name="preferredDates" type="date"/></fieldset><label>Dio dana<select name="dayPeriod" defaultValue="any"><option value="morning">Prijepodne</option><option value="afternoon">Poslijepodne</option><option value="any">Svejedno</option></select></label><label>Dodatne želje<textarea name="message" rows={4}/></label><button className="primary" type="submit">Pošalji želju Kristini</button><button className="secondary" type="button" onClick={()=>setSection('home')}>Odustani</button></form></section>}
+      {section==='request'&&<section className="client-card-section"><h2>Želja za termin</h2><p className="important-note">Ovo nije rezervacija. Kristina će pregledati vašu želju i potvrditi termin.</p><form onSubmit={event=>void saveRequest(event)}><label>Kategorija<select value={requestCategory} onChange={event=>setRequestCategory(event.target.value)}><option value="">Sve kategorije</option>{requestCategories.map(category=><option key={category} value={category}>{category}</option>)}</select></label><fieldset className="client-treatment-picker"><legend>Odaberite jedan ili više tretmana</legend>{bookableServices.filter(item=>!requestCategory||item.categoryName===requestCategory).map(item=><label key={item.id}><input type="checkbox" checked={Boolean(item.id&&requestServiceIds.includes(item.id))} onChange={event=>{if(!item.id)return;setRequestServiceIds(current=>event.target.checked?[...current,item.id as string]:current.filter(id=>id!==item.id))}}/><span><strong>{item.name}</strong><small>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}{item.durationMinutes?` · ${item.durationMinutes} min`:''}</small></span></label>)}</fieldset>{requestServiceIds.length>0&&<div className="client-treatment-summary"><strong>Odabrano</strong><p>{bookableServices.filter(item=>item.id&&requestServiceIds.includes(item.id)).map(item=>item.name).join(' + ')}</p><small>Procijenjeno trajanje: {bookableServices.filter(item=>item.id&&requestServiceIds.includes(item.id)).reduce((sum,item)=>sum+(item.durationMinutes??0),0)} min</small></div>}<fieldset><legend>Poželjni dani</legend><input required name="preferredDates" type="date"/><input name="preferredDates" type="date"/><input name="preferredDates" type="date"/></fieldset><label>Dio dana<select name="dayPeriod" defaultValue="any"><option value="morning">Prijepodne</option><option value="afternoon">Poslijepodne</option><option value="any">Svejedno</option></select></label><label>Dodatne želje<textarea name="message" rows={4}/></label><button className="primary" type="submit" disabled={!requestServiceIds.length}>Pošalji želju Kristini</button><button className="secondary" type="button" onClick={()=>setSection('home')}>Odustani</button></form></section>}
       {section==='appointments'&&<section className="client-card-section"><h2>Moji budući termini</h2>{upcoming.length?<div className="portal-list">{upcoming.map(item=><button key={item.id} onClick={()=>setDetail(item)}><div><strong>{formatDateTime(item.starts_at)}</strong><span>{appointmentService(item)}</span></div><b>Potvrđeno</b></button>)}</div>:<p className="empty-state">Nema budućih potvrđenih termina.</p>}</section>}
       {section==='prices'&&<section className="client-card-section client-price-section"><h2>Cjenik</h2><div className="client-price-accordion">{priceCategories.map(category=>{const open=openPriceCategory===category;const items=priceList.filter(item=>item.categoryName===category);return <section className={`client-price-category ${open?'open':''}`} key={category}><button type="button" aria-expanded={open} onClick={()=>setOpenPriceCategory(open?'':category)}><span className="category-chevron" aria-hidden="true">›</span><strong>{category}</strong></button>{open&&<div className="client-price-list">{items.map(item=><div key={item.name}><span>{item.name}</span><strong>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</strong></div>)}</div>}</section>})}</div><p className="privacy-note">U cijene su uključeni svi porezi.</p></section>}
       {section==='messages'&&<section className="client-card-section client-chat"><h2>Poruke s Kristinom</h2><div className="chat-thread">{[...messages].reverse().map(item=><article className={`chat-bubble ${item.sender} ${highlightedMessageIds.includes(item.id)?'new-message':''}`} key={item.id}>{item.subject&&item.subject!=='Poruka klijenta'&&<strong>{item.subject}</strong>}<p>{item.message}</p><footer><span>{formatDateTime(item.created_at)}</span>{item.sender==='client'&&<span className={item.read_at?'read-receipt read':'read-receipt'}>{item.read_at?'✓✓ Pročitano':'✓ Poslano'}</span>}<button type="button" onClick={()=>void deleteClientMessage(item)}>Obriši</button></footer></article>)}{!messages.length&&<p className="empty-state">Još nema poruka. Ovdje možete izravno pisati Kristini.</p>}</div><form className="chat-composer" onSubmit={event=>void sendClientMessage(event)}><textarea rows={2} value={messageDraft} onChange={event=>setMessageDraft(event.target.value)} placeholder="Napiši poruku…"/><button className="primary" disabled={messageBusy||!messageDraft.trim()} type="submit">{messageBusy?'Šaljem…':'Pošalji'}</button></form></section>}

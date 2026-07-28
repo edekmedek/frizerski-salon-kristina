@@ -17,6 +17,7 @@ export interface SupabaseAppointmentRow {
   total_price_snapshot: number | string | null
   total_duration_minutes: number | null
   no_charge: boolean | null
+  confirmation_status?: 'pending' | 'confirmed' | null
 }
 
 export interface SupabaseAppointmentServiceRow {
@@ -54,7 +55,7 @@ export function mapSupabaseAppointments(
       id: item.id,
       clientId: item.client_id,
       dateTime: localDateTimeValue(item.starts_at),
-      service: item.service_name_snapshot ?? item.service ?? '',
+      service: `${item.confirmation_status === 'pending' ? '⏳ Čeka potvrdu · ' : ''}${item.service_name_snapshot ?? item.service ?? 'Termin bez tretmana'}`,
       serviceId: item.service_id ?? undefined,
       servicePrice: item.total_price_snapshot == null
         ? item.service_price_snapshot == null ? undefined : Number(item.service_price_snapshot)
@@ -67,6 +68,7 @@ export function mapSupabaseAppointments(
         durationMinutes: item.service_duration_snapshot ?? undefined,
       }] : [],
       noCharge: item.no_charge === true,
+      confirmationStatus: item.confirmation_status === 'pending' ? 'pending' : 'confirmed',
       status: item.status === 'cancelled' ? 'otkazan' : item.status === 'completed' ? 'zavrsen' : 'zakazan',
       note: item.notes ?? '',
       assignedBy: 'Kristina',

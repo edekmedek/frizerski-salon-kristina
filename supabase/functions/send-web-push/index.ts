@@ -34,7 +34,7 @@ Deno.serve(async request => {
     ) {
       const { data: ownClient, error: clientError } = await caller
         .from('clients')
-        .select('id,endpoint,p256dh,auth')
+        .select('id')
         .eq('user_id', userData.user.id)
         .eq('is_active', true)
         .maybeSingle()
@@ -42,7 +42,7 @@ Deno.serve(async request => {
 
       const { data: ownSubscriptions, error: subscriptionsError } = await admin
         .from('client_push_subscriptions')
-        .select('id')
+        .select('id,endpoint,p256dh,auth')
         .eq('client_id', ownClient.id)
         .order('updated_at', { ascending: false })
       if (subscriptionsError) throw subscriptionsError
@@ -70,14 +70,30 @@ Deno.serve(async request => {
           return new Response(JSON.stringify({ subscriptionsFound: 1, sent: 1, failed: 0 }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
-        } catch {
+        } catch (pushError) {
+          const statusCode = (pushError as { statusCode?: number }).statusCode
+          console.error('Client test push failed.', {
+            statusCode: statusCode ?? null,
+            message: pushError instanceof Error ? pushError.message : 'Unknown push error',
+          })
           return new Response(JSON.stringify({ subscriptionsFound: 1, sent: 0, failed: 1 }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
         }
       }
 
-      const staleIds = (ownSubscriptions ?? []).slice(1).map(subscription => subscription.id)
+      const activeEndpoint = typeof requestBody.activeEndpoint === 'string'
+        ? requestBody.activeEndpoint
+        : ''
+      const retainedSubscription = activeEndpoint
+        ? ownSubscriptions?.find(subscription => subscription.endpoint === activeEndpoint)
+        : ownSubscriptions?.[0]
+      if (activeEndpoint && !retainedSubscription) {
+        throw new Error('Active push subscription could not be verified')
+      }
+      const staleIds = (ownSubscriptions ?? [])
+        .filter(subscription => subscription.id !== retainedSubscription?.id)
+        .map(subscription => subscription.id)
       if (staleIds.length) {
         const { error: cleanupError } = await admin
           .from('client_push_subscriptions')

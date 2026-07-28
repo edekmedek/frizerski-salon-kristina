@@ -30,6 +30,7 @@ export interface Appointment {
   priceWasManuallyAdjusted?: boolean
   priceBeforeNoCharge?: number
   noCharge?: boolean
+  confirmationStatus?: 'pending' | 'confirmed'
   status: AppointmentStatus
   note: string
   assignedBy: 'Kristina'

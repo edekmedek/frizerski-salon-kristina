@@ -10,9 +10,11 @@ interface RequestInboxProps {
   onAccept: (request: AdminRequest) => void
   onRespond: (request: AdminRequest, status: 'in_review' | 'rejected', reply: string) => Promise<boolean>
   onClose: () => void
+  duration?: number
+  onDurationChange?: (duration: number) => void
 }
 
-export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, onRespond, onClose }: RequestInboxProps) {
+export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, onRespond, onClose, duration, onDurationChange }: RequestInboxProps) {
   const [proposal, setProposal] = useState('')
   const pending = requests.filter(item => item.status === 'pending' || item.status === 'in_review')
 
@@ -31,6 +33,7 @@ export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, 
       {selected.clientReply && <article className="full-message"><strong>Odgovor klijenta na prijedlog</strong><p>{selected.clientReply}</p></article>}
       {selected.adminReply && <article className="admin-reply"><strong>Kristinin odgovor</strong><p>{selected.adminReply}</p></article>}
       {(selected.status === 'pending' || selected.status === 'in_review') && <div className="request-detail-actions">
+        {selected.kind === 'appointment' && duration&&onDurationChange&&<label>Ukupno trajanje termina (min)<input type="number" min="15" step="15" value={duration} onChange={event=>onDurationChange(Math.max(15,Math.round(Number(event.target.value)/15)*15))}/></label>}
         {selected.kind === 'appointment' && <button className="primary" disabled={busy} onClick={() => onAccept(selected)}>Prihvati i odaberi termin</button>}
         <label>Prijedlog drugog datuma i vremena ili poruka
           <textarea rows={3} value={proposal} onChange={event => setProposal(event.target.value)} placeholder="Npr. Mogu ponuditi 29. 7. u 15:30." />

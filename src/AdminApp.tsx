@@ -22,6 +22,7 @@ import { calendarEventLayout, calendarTimeMarks, calendarWorkingHours, calendarW
 import { calendarDateAfterMove, canOpenMainCalendarDate, isArchivedAppointment } from './lib/calendarAccess'
 import { createEmptyAdminPinFields, isValidAdminPin, isValidCurrentAdminPin } from './lib/adminPin'
 import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, normalizeAppointmentTreatmentTotals, removeTreatmentPreservingOverrides, treatmentTotals } from './lib/appointmentTreatments'
+import { isValidAppointmentDuration, normalizeDurationToQuarter, suggestedTreatmentDuration } from './lib/appointmentDuration'
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
 import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
 import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppointmentServiceRow } from './lib/adminAppointmentSync'
@@ -114,6 +115,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [clientForm, setClientForm] = useState<Client | null>(null)
   const [appointmentForm, setAppointmentForm] = useState<Appointment | null>(null)
   const [movingAppointment, setMovingAppointment] = useState<Appointment | null>(null)
+  const [appointmentPlaced, setAppointmentPlaced] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [treatmentArchives, setTreatmentArchives] = useState<TreatmentPhotoSet[]>([])
   const [archiveFiles, setArchiveFiles] = useState<PendingTreatmentPhoto[]>([])
@@ -153,6 +155,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [adminMessages, setAdminMessages] = useState<AdminMessage[]>([])
   const [selectedAdminRequest, setSelectedAdminRequest] = useState<AdminRequest>()
   const [requestDraftTime, setRequestDraftTime] = useState('')
+  const [requestDurationOverride, setRequestDurationOverride] = useState<number>()
   const [selectedAdminMessage, setSelectedAdminMessage] = useState<AdminMessage>()
   const [inboxBusy, setInboxBusy] = useState(false)
   const requestDraftDayChangeRef = useRef(0)
@@ -213,6 +216,13 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       price: appointmentForm.servicePrice ?? totals.price,
       manual: appointmentForm.priceWasManuallyAdjusted === true,
     }
+  }, [appointmentForm])
+  useEffect(() => {
+    if (!appointmentForm) return
+    const durationInput = [...document.querySelectorAll<HTMLInputElement>('.modal input[type="number"]')]
+      .find(input => input.closest('label')?.textContent?.includes('Ukupno trajanje'))
+    durationInput?.setAttribute('min', '15')
+    durationInput?.setAttribute('step', '15')
   }, [appointmentForm])
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) setNotice(message) }
   function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
@@ -412,27 +422,39 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       return
     }
     setSourceRequestId('')
+    setAppointmentPlaced(false)
     setAppointmentForm({ ...emptyAppointment(data.appointments), dateTime: `${selectedCalendarDate}T${time}` })
   }
 
   async function sendSelectedRequestProposal() {
-    if (!selectedAdminRequest || !requestDraftTime || !supabase) return
+    if (!selectedAdminRequest || !requestDraftTime || !supabase || !isValidAppointmentDuration(requestDraftDuration)) return
     const endTime = minutesToTime(timeToMinutes(requestDraftTime) + requestDraftDuration)
     const proposal = `Prijedlog termina: ${formatDate(selectedCalendarDate)} od ${requestDraftTime} do ${endTime} (${requestDraftDuration} min) za uslugu ${selectedAdminRequest.service}. Molimo potvrdite odgovara li vam termin.`
     setInboxBusy(true)
     const proposedStartsAt = new Date(`${selectedCalendarDate}T${requestDraftTime}`).toISOString()
-    const { error } = await supabase.rpc('admin_propose_client_request', {
+    const proposalResult = await supabase.rpc('admin_create_proposal_for_client_request', {
       target_request_id: selectedAdminRequest.id,
       target_starts_at: proposedStartsAt,
-      target_duration_minutes: requestDraftDuration,
+      target_total_duration: requestDraftDuration,
+      target_lifecycle_status: 'confirmed',
+      target_confirmation_status: 'pending',
       reply_message: proposal,
+      target_notes: selectedAdminRequest.message,
+      target_no_charge: false,
+      target_service_ids: selectedRequestServices.map(item=>item.id),
+      target_total_price: selectedRequestServices.reduce((sum,item)=>sum+item.price,0),
     })
+    if (proposalResult.error || !(proposalResult.data as { appointment_id: string }[] | null)?.[0]?.appointment_id) {
+      setInboxBusy(false)
+      setNotice('Prijedlog nije spremljen. Termin nije dodan u kalendar.')
+      return
+    }
     setInboxBusy(false)
-    if (error) { setNotice('Prijedlog termina nije poslan. Provjerite je li nova Supabase migracija primijenjena.'); return }
     void sendClientPush(selectedAdminRequest.clientId, `appointment-proposal-${selectedAdminRequest.id}`)
-    await loadAdminInbox()
+    await refreshAdminServerState()
     setSelectedAdminRequest(undefined)
     setRequestDraftTime('')
+    setRequestDurationOverride(undefined)
     setNotice('Prijedlog termina poslan je klijentu na potvrdu.')
   }
 
@@ -441,7 +463,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       const [{ data: clients, error }, { data: statuses }, { data: appointments }, { data: services }, { data: categories }, { data: treatmentRows, error: treatmentError }] = await Promise.all([
         supabase.from('clients').select('id,first_name,last_name,phone,notes,created_at,updated_at').eq('is_active', true).order('last_name').order('first_name'),
         supabase.rpc('admin_client_portal_pin_status'),
-        supabase.from('appointments').select('id,client_id,starts_at,service,status,notes,created_at,updated_at,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,total_price_snapshot,total_duration_minutes,no_charge'),
+        supabase.from('appointments').select('id,client_id,starts_at,service,status,confirmation_status,notes,created_at,updated_at,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,total_price_snapshot,total_duration_minutes,no_charge'),
         supabase.rpc('admin_list_services'),
         supabase.rpc('admin_list_service_categories'),
         supabase.from('appointment_services').select('appointment_id,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,display_order').order('display_order'),
@@ -527,16 +549,17 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
   async function loadAdminInbox(notifyAboutNewRequests = false) {
     if (!supabase) return false
-    const [requestResult, messageResult] = await Promise.all([
+    const [requestResult, requestServiceResult, messageResult] = await Promise.all([
       supabase.rpc('admin_list_client_request_inbox'),
+      supabase.from('client_request_services').select('request_id,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,display_order').order('display_order'),
       supabase.rpc('admin_list_chat_messages'),
     ])
-    if (requestResult.error || messageResult.error) {
+    if (requestResult.error || requestServiceResult.error || messageResult.error) {
       setSyncStatus('error')
       setNotice('Administratorski inbox nije moguće sinkronizirati.')
       return false
     }
-    const nextRequests = mapAdminRequests(requestResult.data ?? [])
+    const nextRequests = mapAdminRequests(requestResult.data ?? [], requestServiceResult.data ?? [])
     const nextMessages = mapAdminMessages(messageResult.data ?? [])
     if (notifyAboutNewRequests && adminInboxInitializedRef.current) {
       const hasNewRequest = hasNewUnreadAdminRequest(nextRequests, knownAdminRequestVersionsRef.current)
@@ -557,7 +580,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   async function loadAdminAppointments() {
     if (!supabase) return false
     const [appointmentResult, treatmentResult] = await Promise.all([
-      supabase.from('appointments').select('id,client_id,starts_at,service,status,notes,created_at,updated_at,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,total_price_snapshot,total_duration_minutes,no_charge'),
+      supabase.from('appointments').select('id,client_id,starts_at,service,status,confirmation_status,notes,created_at,updated_at,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,total_price_snapshot,total_duration_minutes,no_charge'),
       supabase.from('appointment_services').select('appointment_id,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,display_order').order('display_order'),
     ])
     if (appointmentResult.error || treatmentResult.error) {
@@ -628,6 +651,11 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     const opened = { ...request, readAt }
     setAdminRequests(current => current.map(item => item.id === request.id ? opened : item))
     setSelectedAdminRequest(opened)
+    const requestedDuration = request.treatments.length
+      ? request.treatments.reduce((sum,item)=>sum+item.durationMinutes,0)
+      : serviceCatalog.filter(item=>request.service.split(' + ').includes(item.name))
+        .reduce((sum,item)=>sum+(item.durationMinutes??0),0)
+    setRequestDurationOverride(normalizeDurationToQuarter((request.proposedDurationMinutes??requestedDuration)||30))
     const requestedDate = request.preferredDates[0]
     if (requestedDate) {
       const periodTimes = timeOptions.filter(time =>
@@ -660,16 +688,24 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }
 
   function acceptAdminRequest(request: AdminRequest) {
-    const selectedService = serviceCatalog.find(item => item.isActive && item.isBookable && item.name === request.service)
-    if (!selectedService) { setNotice('Tretman iz zahtjeva više nije dostupan u cjeniku.'); return }
+    const requestedNames = request.treatments.length
+      ? request.treatments.map(item=>item.name)
+      : request.service.split(' + ').filter(Boolean)
+    const requestedIds = request.treatments.flatMap(item=>item.serviceId?[item.serviceId]:[])
+    const selectedServices = serviceCatalog.filter(item =>
+      item.isActive && item.isBookable
+      && (requestedIds.includes(item.id) || requestedNames.includes(item.name)))
+    if (!selectedServices.length) { setNotice('Tretmani iz zahtjeva više nisu dostupni u cjeniku.'); return }
     const date = request.preferredDates[0] || localDateString(new Date())
     const periodTimes = timeOptions.filter(time =>
       request.dayPeriod === 'any'
       || (request.dayPeriod === 'morning' ? time < '12:00' : time >= '12:00'))
-    const time = periodTimes.find(candidate => !isTimeUnavailable(date, candidate, selectedService.name, data.appointments)) ?? periodTimes[0] ?? '08:00'
-    const appointment = addTreatmentPreservingOverrides(emptyAppointment(data.appointments), selectedService)
+    const serviceLabel = selectedServices.map(item=>item.name).join(' + ')
+    const time = periodTimes.find(candidate => !isTimeUnavailable(date, candidate, serviceLabel, data.appointments)) ?? periodTimes[0] ?? '08:00'
+    const appointment = selectedServices.reduce(addTreatmentPreservingOverrides, emptyAppointment(data.appointments))
+    setRequestDurationOverride(normalizeDurationToQuarter(suggestedTreatmentDuration(appointment.treatments ?? [])))
     setSourceRequestId(request.id)
-    setAppointmentForm({ ...appointment, clientId: request.clientId, dateTime: `${date}T${time}`, note: request.message })
+    setAppointmentForm({ ...appointment, clientId: request.clientId, dateTime: `${date}T${time}`, note: request.message, confirmationStatus:'pending' })
     setSelectedAdminRequest(undefined)
   }
 
@@ -879,6 +915,14 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }
   async function saveAppointment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!appointmentForm) return
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null
+    const confirmationAction = submitter?.value
+    const confirmationStatus = confirmationAction === 'send'
+      ? 'pending'
+      : confirmationAction === 'confirm'
+        ? 'confirmed'
+        : appointmentForm.confirmationStatus ?? 'confirmed'
+    if (confirmationAction === 'confirm' && !window.confirm('Potvrditi termin odmah bez potvrde klijenta?')) return
     const originalAppointment = appointmentForm.id
       ? data.appointments.find(item => item.id === appointmentForm.id)
       : undefined
@@ -888,7 +932,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       && originalAppointment.status !== 'otkazan'
       && appointmentForm.status === 'otkazan')
     if (!appointmentForm.clientId) { setNotice('Odaberite klijenta.'); return }
-    if (!appointmentForm.treatments?.length) { setNotice('Dodajte barem jedan tretman.'); return }
+    if (!isValidAppointmentDuration(appointmentForm.serviceDuration)) { setNotice('Trajanje mora biti najmanje 15 minuta i u koracima od 15 minuta.'); return }
     if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(appointmentForm.dateTime)){setNotice('Odaberite datum i vrijeme.');return}
     const conflicts=conflictingAppointments(appointmentForm.dateTime.slice(0,10),appointmentForm.dateTime.slice(11,16),appointmentForm.service,data.appointments,appointmentForm.id)
     if(conflicts.length&&currentUserRole!=='administrator'){setNotice('Odabrani termin nije dostupan.');return}
@@ -901,20 +945,29 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         target_starts_at: startsAt,
         target_notes: appointmentForm.note,
         target_no_charge: appointmentForm.noCharge === true,
-        target_service_ids: appointmentForm.treatments.map(item => item.serviceId),
+        target_service_ids: (appointmentForm.treatments ?? []).map(item => item.serviceId),
         target_total_duration: appointmentForm.serviceDuration || null,
         target_total_price: finalAppointmentPrice(appointmentForm),
       }
-      const acceptingRequest = sourceRequestId && !appointmentForm.id
-      const result = acceptingRequest
-        ? await supabase.rpc('admin_accept_client_request', {
+      const acceptingRequest = Boolean(sourceRequestId && !appointmentForm.id)
+      const lifecycleStatus = appointmentForm.status === 'otkazan'
+        ? 'cancelled'
+        : appointmentForm.status === 'zavrsen' ? 'completed' : 'confirmed'
+      const result = acceptingRequest && sourceRequestId
+        ? await supabase.rpc('admin_create_proposal_for_client_request', {
             target_request_id: sourceRequestId,
+            target_lifecycle_status: lifecycleStatus,
+            target_confirmation_status: confirmationStatus,
+            reply_message: confirmationStatus === 'pending'
+              ? 'Termin je poslan na potvrdu.'
+              : 'Termin je potvrdila Kristina.',
             ...appointmentValues,
           })
         : await supabase.rpc('admin_save_appointment_with_services', {
             target_appointment_id: appointmentForm.id || null,
             target_client_id: appointmentForm.clientId,
-            target_status: appointmentForm.status === 'otkazan' ? 'cancelled' : appointmentForm.status === 'zavrsen' ? 'completed' : 'confirmed',
+            target_lifecycle_status: lifecycleStatus,
+            target_confirmation_status: confirmationStatus,
             ...appointmentValues,
           })
       if (result.error || !result.data) { setSyncStatus('error'); setNotice('Termin nije sinkroniziran. Pokušajte ponovno.'); return }
@@ -922,6 +975,16 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         ? (result.data as { appointment_id: string }[])[0]?.appointment_id
         : result.data as string
       if (!savedId) { setSyncStatus('error'); setNotice('Termin nije potvrđen.'); return }
+      if (confirmationStatus === 'pending' && !appointmentWasCancelled) {
+        const notification = await supabase.from('messages').insert({
+          client_id: appointmentForm.clientId,
+          sender: 'admin',
+          subject: 'Potvrdite predloženi termin',
+          message: `Predložen vam je termin ${formatDateTime(appointmentForm.dateTime)} u trajanju ${appointmentForm.serviceDuration} minuta${appointmentTreatmentLabel(appointmentForm)?` za: ${appointmentTreatmentLabel(appointmentForm)}`:''}. Otvorite portal i potvrdite odgovara li vam termin.`,
+          is_read: true,
+        })
+        if (!notification.error) void sendClientPush(appointmentForm.clientId, `appointment-confirmation-${savedId}`)
+      }
       if (appointmentWasCancelled) {
         const cancellationText = `Vaš termin ${formatDateTime(appointmentForm.dateTime)} za uslugu ${appointmentTreatmentLabel(appointmentForm)} je otkazan.`
         const notification = await supabase.from('messages').insert({
@@ -954,6 +1017,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     }
     const appointment = {
       ...appointmentForm,
+      confirmationStatus,
       id: savedId || uid('appointment'),
       service: appointmentTreatmentLabel(appointmentForm),
       servicePrice: finalAppointmentPrice(appointmentForm),
@@ -965,7 +1029,23 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     const client = data.clients.find(item => item.id === appointment.clientId)
     const nextPortal: PortalData = { ...portal, notifications: replaceAppointmentReminders(portal.notifications, appointment, client) }
     if (sourceRequestId) await refreshAdminServerState()
-    updatePortal(nextPortal); setSourceRequestId(''); setAppointmentForm(null)
+    updatePortal(nextPortal); setSourceRequestId(''); setAppointmentPlaced(false); setAppointmentForm(null)
+  }
+  function placeAppointmentFromForm() {
+    if (!appointmentForm?.clientId || !isValidAppointmentDuration(appointmentForm.serviceDuration)
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(appointmentForm.dateTime)) {
+      setNotice('Odaberite klijenta, datum, vrijeme i valjano trajanje.')
+      return
+    }
+    setSelectedCalendarDate(appointmentForm.dateTime.slice(0,10))
+    setMovingAppointment(appointmentForm)
+    setAppointmentForm(null)
+  }
+  function submitPlacedAppointment(confirmationStatus: 'pending' | 'confirmed') {
+    if (!appointmentForm) return
+    if (confirmationStatus === 'confirmed' && !window.confirm('Potvrditi termin odmah bez potvrde klijenta?')) return
+    setAppointmentForm({...appointmentForm,confirmationStatus})
+    window.setTimeout(()=>document.querySelector<HTMLFormElement>('.modal form')?.requestSubmit(),0)
   }
   function replyToRequest(requestId: string, status: 'u_razgovoru' | 'odbijeno') {
     const reply = window.prompt(status === 'odbijeno' ? 'Napišite razlog odbijanja:' : 'Napišite odgovor ili zatražite drugi prijedlog:')
@@ -1103,11 +1183,18 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const selectedAppointmentCategoryId = appointmentForm?.serviceCategoryId
     ?? serviceCatalog.find(item => item.id === appointmentForm?.serviceId)?.categoryId
     ?? ''
-  const selectedRequestService = selectedAdminRequest
-    ? serviceCatalog.find(item => item.name === selectedAdminRequest.service)
-    : undefined
-  const requestDraftDuration = selectedRequestService?.durationMinutes
-    ?? (selectedAdminRequest ? serviceDefinition(selectedAdminRequest.service).totalDuration : 30)
+  const selectedRequestServices = selectedAdminRequest
+    ? serviceCatalog.filter(item =>
+        selectedAdminRequest.treatments.some(treatment=>treatment.serviceId===item.id)
+        || selectedAdminRequest.treatments.some(treatment=>treatment.name===item.name)
+        || selectedAdminRequest.service.split(' + ').includes(item.name))
+    : []
+  const requestDraftDuration = requestDurationOverride
+    ?? normalizeDurationToQuarter(
+      suggestedTreatmentDuration(selectedRequestServices.map(item=>({
+        serviceId:item.id,name:item.name,price:item.price,durationMinutes:item.durationMinutes,
+      }))) || (selectedAdminRequest ? serviceDefinition(selectedAdminRequest.service).totalDuration : 30),
+    )
   const requestDraftLayout = selectedAdminRequest && requestDraftTime
     ? calendarEventLayout(`${selectedCalendarDate}T${requestDraftTime}`, requestDraftDuration)
     : undefined
@@ -1131,11 +1218,13 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       {view === 'arhiva' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INSPIRACIJA I POVIJEST</p><h2>Arhiva frizura</h2></div><button className="primary" onClick={() => { setArchiveFiles([]); setArchiveOpen(true) }}>+ Dodaj tretman</button></div>{archiveProgress&&<p className="archive-progress" role="status">{archiveProgress}</p>}<div className="gallery">{supabase?treatmentArchives.map(entry => <article className="treatment-archive-card" key={entry.id}><div className="treatment-photo-grid">{entry.photos.map(photo=><figure key={photo.id}><a href={photo.imageUrl} target="_blank" rel="noreferrer"><img src={photo.thumbnailUrl||photo.imageUrl} alt={photo.phase==='before'?'Prije tretmana':'Poslije tretmana'} /></a><figcaption>{photo.phase==='before'?'Prije':'Poslije'}</figcaption><div className="archive-photo-actions"><label className="link">Zamijeni<input type="file" accept="image/*,.heic,.heif" onChange={event=>void replaceArchivePhoto(entry,photo.id,event.target.files?.[0])}/></label><button className="link danger-link" type="button" onClick={()=>void removeArchivePhoto(entry,photo.id)}>Obriši</button></div></figure>)}</div><div><small>{formatDate(entry.takenAt)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.notes}</p><button className="link" onClick={()=>void toggleArchiveVisibility(entry)}>{entry.visibleToClient?'Sakrij od klijenta':'Podijeli s klijentom'}</button></div></article>):data.hairstyles.map(entry => <article key={entry.id}><div className="photo-pair"><figure><img src={entry.before.thumb} alt="Prije" /><figcaption>Prije</figcaption></figure>{entry.after&&<figure><img src={entry.after.thumb} alt="Poslije" /><figcaption>Poslije</figcaption></figure>}</div><div><small>{formatDate(entry.date)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.note}</p></div></article>)}</div></section>}
       {view === 'postavke' && <section className="panel settings-panel"><div className="panel-head"><div><p className="eyebrow">SIGURNOST</p><h2>Postavke</h2></div></div><div className="settings-list"><div><div><strong>Administratorski PIN</strong><p>Postavite ili promijenite PIN koji štiti arhivu termina.</p></div><button className="secondary" type="button" onClick={()=>void openAdminPinSettings()}>{adminPinSet===false?'Postavi PIN':'Postavi ili promijeni PIN'}</button></div><div><div><strong>Arhiva termina</strong><p>Pregled prošlih termina zaštićen administratorskim PIN-om.</p></div><button className="secondary" type="button" onClick={()=>void openAppointmentArchive()}>Otvori arhivu</button></div></div></section>}
       {view === 'arhiva-termina' && appointmentArchiveUnlocked && <section className="panel appointment-archive"><div className="panel-head"><div><p className="eyebrow">ZAŠTIĆENI PREGLED</p><h2>Arhiva termina</h2></div><button className="secondary" type="button" onClick={()=>setView('postavke')}>Natrag</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{pastAppointments.map(item=><tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.noCharge?'no-charge':item.status}`}>{item.noCharge?'Privatno / gratis – bez naplate':appointmentStatusLabel(item.status)}</span></td><td><button className="link" type="button" onClick={()=>setAppointmentForm(item)}>Uredi</button></td></tr>)}</tbody></table>{pastAppointments.length===0&&<p className="empty-state">Nema evidentiranih prošlih termina.</p>}</div></section>}
-      {view === 'zahtjevi-live' && <AdminRequestInbox requests={activeAdminRequests} selected={selectedAdminRequest} busy={inboxBusy} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
+      {view === 'zahtjevi-live' && <AdminRequestInbox requests={activeAdminRequests} selected={selectedAdminRequest} busy={inboxBusy} duration={requestDraftDuration} onDurationChange={setRequestDurationOverride} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
       {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
     <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}
-    {movingAppointment&&<MovingAppointment appointment={movingAppointment} selectedDate={selectedCalendarDate} onChange={setMovingAppointment} onDateChange={setSelectedCalendarDate} onEdit={()=>{setAppointmentForm(movingAppointment);setMovingAppointment(null);window.setTimeout(()=>document.querySelector<HTMLFormElement>('.modal form')?.requestSubmit(),0)}} onCancel={()=>setMovingAppointment(null)}/>}
+    {movingAppointment&&<MovingAppointment appointment={movingAppointment} selectedDate={selectedCalendarDate} onChange={setMovingAppointment} onDateChange={setSelectedCalendarDate} onEdit={()=>{setAppointmentPlaced(true);setAppointmentForm(movingAppointment);setMovingAppointment(null)}} onCancel={()=>setMovingAppointment(null)}/>}
+    {appointmentForm&&!appointmentForm.id&&!appointmentPlaced&&<div className="appointment-quick-actions"><button type="button" className="primary" onClick={placeAppointmentFromForm}>Postavi u kalendar</button></div>}
+    {appointmentForm&&(appointmentPlaced||appointmentForm.confirmationStatus==='pending')&&<div className="appointment-confirmation-actions"><button type="button" className="secondary" disabled={!portalStatuses[appointmentForm.clientId]?.activated} onClick={()=>submitPlacedAppointment('pending')}>Pošalji klijentu na potvrdu</button><button type="button" className="primary" onClick={()=>submitPlacedAppointment('confirmed')}>Potvrdi termin odmah</button>{!portalStatuses[appointmentForm.clientId]?.activated&&<small>Portal klijenta nije aktiviran; termin možete potvrditi odmah.</small>}</div>}
     {appointmentForm?.id&&<div className="appointment-quick-actions" aria-label="Radnje termina"><button type="button" className="secondary danger" onClick={()=>{if(!window.confirm('Otkazati ovaj termin?'))return;setAppointmentForm({...appointmentForm,status:'otkazan'});window.setTimeout(()=>document.querySelector<HTMLFormElement>('.modal form')?.requestSubmit(),0)}}>Otkaži termin</button><button type="button" className="primary" onClick={()=>{setSelectedCalendarDate(appointmentForm.dateTime.slice(0,10));setMovingAppointment(appointmentForm);setAppointmentForm(null)}}>Promijeni termin</button></div>}
     {inviteLink&&<Modal title="Pošalji pristup" onClose={() => setInviteLink('')}><div className="invite-modal"><p>Ovaj uređaj nema izvorni izbornik za dijeljenje. Kopirajte adresu i pošaljite je klijentu.</p><textarea readOnly rows={4} value={inviteLink}/><button className="primary" onClick={() => void navigator.clipboard.writeText(inviteLink)}>Kopiraj adresu</button></div></Modal>}
     {pinClientId&&<Modal title="Novi privremeni PIN" onClose={() => setPinClientId('')}><form onSubmit={event => void saveTemporaryPin(event)}><p className="pin-guidance">Postavite četveroznamenkasti PIN. Klijent će ga morati promijeniti pri prvoj prijavi.</p><label>Privremeni PIN<input required type="text" inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" maxLength={4} value={temporaryPin} onChange={event => setTemporaryPin(event.target.value.replace(/\D/g, '').slice(0, 4))}/></label>{pinError&&<p className="form-error" role="alert">{pinError}</p>}<FormActions disabled={temporaryPin.length !== 4} onCancel={() => setPinClientId('')}/></form></Modal>}
@@ -1143,7 +1232,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     {deleteClientTarget&&<Modal title="Obriši klijenta" onClose={()=>setDeleteClientTarget(null)}><form onSubmit={event=>void deleteClient(event)}><p>Za brisanje klijenta <strong>{deleteClientTarget.firstName} {deleteClientTarget.lastName}</strong> unesite administratorski PIN.</p><AdminPinInput label="Administratorski PIN" autoFocus value={deleteClientPin} onChange={setDeleteClientPin}/>{deleteClientError&&<p className="form-error" role="alert">{deleteClientError}</p>}<div className="form-actions"><button className="secondary" type="button" onClick={()=>setDeleteClientTarget(null)}>Odustani</button><button className="danger-action" type="submit" disabled={!isValidAdminPin(deleteClientPin)}>Obriši klijenta</button></div></form></Modal>}
     {adminPinDialog&&<Modal title={adminPinDialog==='unlock'?'Otključaj arhivu termina':adminPinDialog==='change'?'Promijeni administratorski PIN':'Postavi administratorski PIN'} onClose={closeAdminPinDialog}><form className="admin-pin-form" autoComplete="off" onSubmit={submitAdminPin}>{adminPinDialog==='change'&&<AdminPinInput label="Trenutačni PIN" slots={6} value={currentAdminPin} onChange={setCurrentAdminPin}/>}<AdminPinInput label={adminPinDialog==='unlock'?'Administratorski PIN':'Novi PIN'} autoFocus value={adminPin} onChange={setAdminPin}/>{adminPinDialog!=='unlock'&&<AdminPinInput label="Ponovite novi PIN" value={adminPinConfirm} onChange={setAdminPinConfirm}/>}<small className="pin-format-hint">{adminPinDialog==='change'?'Trenutačni PIN može imati 4 do 6 znamenki. Novi PIN mora imati točno 4 znamenke.':'PIN mora imati točno 4 znamenke.'}</small>{adminPinError&&<p className="form-message" role="alert">{adminPinError}</p>}<div className="form-actions"><button className="secondary" type="button" onClick={closeAdminPinDialog}>Odustani</button><button className="primary" type="submit" disabled={adminPinBusy||!isValidAdminPin(adminPin)||(adminPinDialog!=='unlock'&&!isValidAdminPin(adminPinConfirm))||(adminPinDialog==='change'&&!isValidCurrentAdminPin(currentAdminPin))}>{adminPinBusy?'Provjera…':adminPinDialog==='unlock'?'Otključaj':'Spremi PIN'}</button></div></form></Modal>}
     {clientForm&&<Modal title={clientForm.id?'Kartica klijenta':'Novi klijent'} onClose={() => setClientForm(null)}><form onSubmit={saveClient}><div className="form-grid"><label>Ime<input required value={clientForm.firstName} onChange={e=>setClientForm({...clientForm,firstName:e.target.value})}/></label><label>Prezime<input required value={clientForm.lastName} onChange={e=>setClientForm({...clientForm,lastName:e.target.value})}/></label></div><label>Telefon<input required type="tel" inputMode="tel" autoComplete="tel" value={clientForm.phone} onChange={e=>setClientForm({...clientForm,phone:e.target.value})}/></label>{!clientForm.id&&<label>Početni PIN koji zadaje Kristina<input required type="text" inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" maxLength={4} value={newClientPin} onChange={event=>setNewClientPin(event.target.value.replace(/\D/g,'').slice(0,4))}/><small>Klijent ga mora promijeniti pri prvoj prijavi.</small></label>}{clientForm.id&&<section className="client-portal-access"><strong>Pristup klijentskom portalu</strong><span className={portalStatuses[clientForm.id]?.activated?'portal-active':'portal-inactive'}>{portalStatuses[clientForm.id]?.activated?(portalStatuses[clientForm.id]?.temporary?'Aktivan · promjena PIN-a obavezna':'Aktivan'):'Portal nije aktiviran'}</span>{portalStatuses[clientForm.id]?.currentPin&&<output className="client-temporary-pin">Trenutačni PIN: <b>{portalStatuses[clientForm.id]?.currentPin}</b></output>}<button className="invite-action" type="button" onClick={()=>{const id=clientForm.id;setClientForm(null);if(portalStatuses[id]?.activated)openTemporaryPin(id);else void prepareInitialPin(id)}}>{portalStatuses[clientForm.id]?.activated?'Postavi novi privremeni PIN':'Aktiviraj pristup i postavi PIN'}</button></section>}<div className="form-field"><span>Profilna fotografija</span><ClientPhotoInput value={clientForm.photo} onChange={photo=>setClientForm({...clientForm,photo})}/></div><label>Bilješka<textarea rows={4} value={clientForm.note} onChange={e=>setClientForm({...clientForm,note:e.target.value})}/></label>{clientForm.id&&<button className="danger-action" type="button" onClick={()=>{const target=clientForm;setClientForm(null);setDeleteClientPin('');setDeleteClientError('');setDeleteClientTarget(target)}}>Obriši klijenta</button>}<FormActions disabled={isSavingClient||(!clientForm.id&&newClientPin.length!==4)} submitting={isSavingClient} onCancel={()=>setClientForm(null)}/></form></Modal>}
-    {appointmentForm&&<Modal title={appointmentForm.id?'Uredi termin':'Novi termin'} onClose={()=>setAppointmentForm(null)}><form onSubmit={event=>void saveAppointment(event)}><div className="form-field"><span id="client-picker-label">Klijent</span><ClientPicker clients={data.clients} value={appointmentForm.clientId} onChange={clientId=>setAppointmentForm({...appointmentForm,clientId})}/></div><div className="date-time-fields"><label>Datum<input required type="date" value={appointmentForm.dateTime.slice(0,10)} onChange={e=>{const date=e.target.value;const time=firstAvailableTime(date,appointmentForm.service,data.appointments,appointmentForm.id);setAppointmentForm({...appointmentForm,dateTime:time?`${date}T${time}`:`${date}T`})}}/></label><div className="form-field"><span id="time-picker-label">Vrijeme</span><TimePicker date={appointmentForm.dateTime.slice(0,10)} value={appointmentForm.dateTime.slice(11,16)} service={appointmentForm.service} appointments={data.appointments} clients={data.clients} editingId={appointmentForm.id} allowOverride={currentUserRole==='administrator'} onChange={time=>setAppointmentForm({...appointmentForm,dateTime:`${appointmentForm.dateTime.slice(0,10)}T${time}`})}/></div></div><label>Kategorija tretmana<select value={selectedAppointmentCategoryId} onChange={event=>setAppointmentForm({...appointmentForm,serviceCategoryId:event.target.value})}><option value="">Odaberite kategoriju</option>{orderedCategories(categoryCatalog).filter(category=>category.isActive&&appointmentServices(serviceCatalog,category.id).length).map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Dodaj tretman<span className="service-select"><select disabled={!selectedAppointmentCategoryId} value="" onChange={event=>{const selected=serviceCatalog.find(item=>item.id===event.target.value);if(selected)setAppointmentForm(addTreatmentPreservingOverrides(appointmentForm,selected))}}><option value="">{selectedAppointmentCategoryId?'Odaberite tretman':'Prvo odaberite kategoriju'}</option>{appointmentServices(serviceCatalog,selectedAppointmentCategoryId).filter(item=>!appointmentForm.treatments?.some(selected=>selected.serviceId===item.id)).map(item=><option key={item.id} value={item.id}>{item.name} — {item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}{item.durationMinutes?` · ${item.durationMinutes} min`:''}</option>)}</select><span aria-hidden="true">⌄</span></span></label><div className="selected-treatments">{appointmentForm.treatments?.map(item=><div key={item.serviceId}><span>{item.name}</span><small>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}{item.durationMinutes?` · ${item.durationMinutes} min`:''}</small><button className="link" type="button" onClick={()=>setAppointmentForm(removeTreatmentPreservingOverrides(appointmentForm,item.serviceId))}>Ukloni</button></div>)}</div><div className="form-grid"><label>Ukupno trajanje (min)<input type="number" min="1" step="1" value={appointmentForm.serviceDuration??''} onChange={event=>setAppointmentForm({...appointmentForm,serviceDuration:Number(event.target.value)})}/></label><label>Konačna cijena (€)<input type="number" min="0" step="0.01" disabled={appointmentForm.noCharge} value={finalAppointmentPrice(appointmentForm)} onChange={event=>setAppointmentForm({...appointmentForm,servicePrice:Number(event.target.value)})}/></label></div><div className="form-grid"><label>Status<select value={appointmentForm.status} onChange={e=>setAppointmentForm({...appointmentForm,status:e.target.value as Appointment['status']})}><option value="zakazan">Zakazan</option><option value="zavrsen">Završen</option><option value="otkazan">Otkazan</option></select></label><label>Termin unosi<input value="Kristina" disabled/></label></div><label className="checkbox-field"><input type="checkbox" checked={appointmentForm.noCharge===true} onChange={event=>setAppointmentForm({...appointmentForm,noCharge:event.target.checked,servicePrice:event.target.checked?0:undefined})}/> Privatno / gratis – bez naplate</label><p className="hint no-charge-hint">Oznaka samo evidentira da naplate nije bilo; ne određuje fiskalni tretman.</p><label>Bilješka<textarea rows={3} value={appointmentForm.note} onChange={e=>setAppointmentForm({...appointmentForm,note:e.target.value})}/></label><FormActions disabled={!appointmentForm.clientId||!appointmentForm.treatments?.length||!appointmentForm.serviceDuration||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(appointmentForm.dateTime)} onCancel={()=>setAppointmentForm(null)}/></form></Modal>}
+    {appointmentForm&&<Modal title={appointmentForm.id?'Uredi termin':'Novi termin'} onClose={()=>setAppointmentForm(null)}><form onSubmit={event=>void saveAppointment(event)}><div className="form-field"><span id="client-picker-label">Klijent</span><ClientPicker clients={data.clients} value={appointmentForm.clientId} onChange={clientId=>setAppointmentForm({...appointmentForm,clientId})}/></div><div className="date-time-fields"><label>Datum<input required type="date" value={appointmentForm.dateTime.slice(0,10)} onChange={e=>{const date=e.target.value;const time=firstAvailableTime(date,appointmentForm.service,data.appointments,appointmentForm.id);setAppointmentForm({...appointmentForm,dateTime:time?`${date}T${time}`:`${date}T`})}}/></label><div className="form-field"><span id="time-picker-label">Vrijeme</span><TimePicker date={appointmentForm.dateTime.slice(0,10)} value={appointmentForm.dateTime.slice(11,16)} service={appointmentForm.service} appointments={data.appointments} clients={data.clients} editingId={appointmentForm.id} allowOverride={currentUserRole==='administrator'} onChange={time=>setAppointmentForm({...appointmentForm,dateTime:`${appointmentForm.dateTime.slice(0,10)}T${time}`})}/></div></div><label>Kategorija tretmana<select value={selectedAppointmentCategoryId} onChange={event=>setAppointmentForm({...appointmentForm,serviceCategoryId:event.target.value})}><option value="">Odaberite kategoriju</option>{orderedCategories(categoryCatalog).filter(category=>category.isActive&&appointmentServices(serviceCatalog,category.id).length).map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Dodaj tretman<span className="service-select"><select disabled={!selectedAppointmentCategoryId} value="" onChange={event=>{const selected=serviceCatalog.find(item=>item.id===event.target.value);if(selected)setAppointmentForm(addTreatmentPreservingOverrides(appointmentForm,selected))}}><option value="">{selectedAppointmentCategoryId?'Odaberite tretman':'Prvo odaberite kategoriju'}</option>{appointmentServices(serviceCatalog,selectedAppointmentCategoryId).filter(item=>!appointmentForm.treatments?.some(selected=>selected.serviceId===item.id)).map(item=><option key={item.id} value={item.id}>{item.name} — {item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}{item.durationMinutes?` · ${item.durationMinutes} min`:''}</option>)}</select><span aria-hidden="true">⌄</span></span></label><div className="selected-treatments">{appointmentForm.treatments?.map(item=><div key={item.serviceId}><span>{item.name}</span><small>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}{item.durationMinutes?` · ${item.durationMinutes} min`:''}</small><button className="link" type="button" onClick={()=>setAppointmentForm(removeTreatmentPreservingOverrides(appointmentForm,item.serviceId))}>Ukloni</button></div>)}</div><div className="form-grid"><label>Ukupno trajanje (min)<input type="number" min="15" step="15" value={appointmentForm.serviceDuration??''} onChange={event=>setAppointmentForm({...appointmentForm,serviceDuration:Number(event.target.value)})}/></label><label>Konačna cijena (€)<input type="number" min="0" step="0.01" disabled={appointmentForm.noCharge} value={finalAppointmentPrice(appointmentForm)} onChange={event=>setAppointmentForm({...appointmentForm,servicePrice:Number(event.target.value)})}/></label></div><div className="form-grid"><label>Status<select value={appointmentForm.status} onChange={e=>setAppointmentForm({...appointmentForm,status:e.target.value as Appointment['status']})}><option value="zakazan">Zakazan</option><option value="zavrsen">Završen</option><option value="otkazan">Otkazan</option></select></label><label>Termin unosi<input value="Kristina" disabled/></label></div><label className="checkbox-field"><input type="checkbox" checked={appointmentForm.noCharge===true} onChange={event=>setAppointmentForm({...appointmentForm,noCharge:event.target.checked,servicePrice:event.target.checked?0:undefined})}/> Privatno / gratis – bez naplate</label><p className="hint no-charge-hint">Oznaka samo evidentira da naplate nije bilo; ne određuje fiskalni tretman.</p><label>Bilješka<textarea rows={3} value={appointmentForm.note} onChange={e=>setAppointmentForm({...appointmentForm,note:e.target.value})}/></label><FormActions disabled={!appointmentForm.clientId||!isValidAppointmentDuration(appointmentForm.serviceDuration)||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(appointmentForm.dateTime)} onCancel={()=>setAppointmentForm(null)}/></form></Modal>}
     {serviceForm&&<Modal title={serviceForm.id?'Uredi stavku cjenika':'Nova stavka cjenika'} onClose={()=>setServiceForm(null)}><form onSubmit={event=>void saveService(event)}><label>Kategorija<select required value={serviceForm.categoryId} onChange={event=>{const category=categoryCatalog.find(item=>item.id===event.target.value);setServiceForm({...serviceForm,categoryId:event.target.value,categoryName:category?.name??''})}}>{orderedCategories(categoryCatalog).map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Naziv<input required value={serviceForm.name} onChange={event=>setServiceForm({...serviceForm,name:event.target.value})}/></label><div className="form-grid"><label>Cijena (€)<input required type="number" min="0" step="0.01" value={serviceForm.price} onChange={event=>setServiceForm({...serviceForm,price:Number(event.target.value)})}/></label><label>Trajanje (min)<input type="number" min="1" step="1" value={serviceForm.durationMinutes??''} onChange={event=>setServiceForm({...serviceForm,durationMinutes:event.target.value?Number(event.target.value):undefined})}/></label></div><label>Redoslijed unutar kategorije<input required type="number" min="0" step="1" value={serviceForm.displayOrder} onChange={event=>setServiceForm({...serviceForm,displayOrder:Number(event.target.value)})}/></label><label className="checkbox-field"><input type="checkbox" checked={serviceForm.isActive} onChange={event=>setServiceForm({...serviceForm,isActive:event.target.checked})}/> Aktivna stavka</label><label className="checkbox-field"><input type="checkbox" checked={serviceForm.isBookable} onChange={event=>setServiceForm({...serviceForm,isBookable:event.target.checked})}/> Može se samostalno odabrati u terminu</label><FormActions onCancel={()=>setServiceForm(null)}/></form></Modal>}
     {categoryForm&&<Modal title={categoryForm.id?'Uredi kategoriju':'Nova kategorija'} onClose={()=>setCategoryForm(null)}><form onSubmit={event=>void saveCategory(event)}><label>Naziv kategorije<input required value={categoryForm.name} onChange={event=>setCategoryForm({...categoryForm,name:event.target.value})}/></label><label>Redoslijed prikaza<input required type="number" min="0" step="1" value={categoryForm.displayOrder} onChange={event=>setCategoryForm({...categoryForm,displayOrder:Number(event.target.value)})}/></label><label className="checkbox-field"><input type="checkbox" checked={categoryForm.isActive} onChange={event=>setCategoryForm({...categoryForm,isActive:event.target.checked})}/> Aktivna kategorija</label><FormActions onCancel={()=>setCategoryForm(null)}/></form></Modal>}
     {archiveOpen&&<Modal title="Dodaj fotografije tretmana" onClose={()=>{if(!archiveSaving)setArchiveOpen(false)}}><form onSubmit={e=>void saveArchive(e)}><label>Klijent<select required name="clientId" disabled={archiveSaving}><option value="">Odaberite klijenta</option>{data.clients.map(c=><option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>)}</select></label><label>Datum tretmana<input required name="date" type="date" disabled={archiveSaving} defaultValue={new Date().toISOString().slice(0,10)}/></label><div className="form-grid"><label>Fotografije prije<input required={supabase?archiveFiles.every(item=>item.phase!=='before'):true} multiple type="file" accept="image/*,.heic,.heif" disabled={archiveSaving} onChange={e=>{const files=Array.from(e.target.files??[]);if(supabase)setArchiveFiles(current=>[...current.filter(item=>item.phase!=='before'),...files.map(file=>({file,phase:'before' as const}))]);else imageFiles.current.before=files[0]}}/></label><label>Fotografije poslije<input multiple type="file" accept="image/*,.heic,.heif" disabled={archiveSaving} onChange={e=>{const files=Array.from(e.target.files??[]);if(supabase)setArchiveFiles(current=>[...current.filter(item=>item.phase!=='after'),...files.map(file=>({file,phase:'after' as const}))]);else imageFiles.current.after=files[0]}}/></label></div>{supabase&&archiveFiles.length>0&&<ul className="archive-file-list">{archiveFiles.map((item,index)=><li key={`${item.file.name}-${index}`}><span>{item.phase==='before'?'Prije':'Poslije'}: {item.file.name}</span><button type="button" className="link" disabled={archiveSaving} onClick={()=>setArchiveFiles(current=>current.filter((_,fileIndex)=>fileIndex!==index))}>Ukloni</button></li>)}</ul>}<label>Bilješka<textarea name="note" rows={3} disabled={archiveSaving}/></label><label className="checkbox-field"><input name="visibleToClient" type="checkbox" disabled={archiveSaving}/> Vidljivo klijentu u portalu</label><p className="hint">Fotografije se prije slanja ispravno okreću, pretvaraju u WebP, smanjuju na najviše 1920 px i dobivaju mali pregled.</p>{archiveProgress&&<p className="archive-progress" role="status">{archiveProgress}</p>}<FormActions disabled={archiveSaving||(Boolean(supabase)&&archiveFiles.length===0)} submitting={archiveSaving} onCancel={()=>setArchiveOpen(false)}/></form></Modal>}

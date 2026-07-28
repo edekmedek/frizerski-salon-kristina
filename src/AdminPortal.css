@@ -778,6 +778,7 @@
   border-color: #a43d35;
   color: #8a302a;
 }
+.appointment-confirmation-actions{position:fixed;right:max(24px,calc((100vw - 720px)/2 + 24px));bottom:78px;z-index:1010;display:flex;max-width:min(520px,calc(100vw - 32px));align-items:center;gap:8px;padding:10px;border-radius:12px;background:#fffdf9;box-shadow:0 10px 35px #32181233}.appointment-confirmation-actions small{max-width:180px;color:var(--muted)}@media(max-width:600px){.appointment-confirmation-actions{right:16px;bottom:max(78px,calc(60px + env(safe-area-inset-bottom)));left:16px;flex-wrap:wrap}.appointment-confirmation-actions button{flex:1 1 180px}}
 
 .moving-appointment {
   position: absolute;

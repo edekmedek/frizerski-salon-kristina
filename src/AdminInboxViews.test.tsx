@@ -13,6 +13,7 @@ const request: AdminRequest = {
   clientName: 'TEST Klijent PIN Provjera',
   clientPhone: '0999302468',
   kind: 'appointment',
+  treatments: [],
   service: 'Svečana frizura duga kosa',
   preferredDates: ['2026-07-27'],
   dayPeriod: 'any',

@@ -33,11 +33,13 @@ describe('send-web-push payload', () => {
     expect(edgeSource).toContain("requestBody.action === 'deduplicate-client-subscriptions'")
     expect(edgeSource).toContain(".eq('user_id', userData.user.id)")
     expect(edgeSource).toContain(".eq('client_id', ownClient.id)")
-    expect(edgeSource).toContain('const staleIds = (ownSubscriptions ?? []).slice(1)')
+    expect(edgeSource).toContain("subscription.endpoint === activeEndpoint")
+    expect(edgeSource).toContain("subscription.id !== retainedSubscription?.id")
   })
 
   it('offers an authenticated client test push without changing message delivery', () => {
     expect(edgeSource).toContain("requestBody.action === 'test-client-push'")
+    expect(edgeSource).toContain(".select('id,endpoint,p256dh,auth')")
     expect(edgeSource).toContain('Probna obavijest uspješno je uključena.')
     expect(edgeSource).toContain("notificationType: 'notification-test'")
     expect(edgeSource).toContain("tag: 'salon-kristina-notification-test'")

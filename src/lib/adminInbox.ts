@@ -5,6 +5,7 @@ export interface AdminRequest {
   clientPhone: string
   kind: 'appointment' | 'change' | 'cancellation'
   service: string
+  treatments: AdminRequestTreatment[]
   preferredDates: string[]
   dayPeriod: 'morning' | 'afternoon' | 'any'
   message: string
@@ -18,6 +19,14 @@ export interface AdminRequest {
   clientReadAt?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface AdminRequestTreatment {
+  serviceId?: string
+  name: string
+  price?: number
+  durationMinutes: number
+  displayOrder: number
 }
 
 export interface AdminMessage {
@@ -58,6 +67,15 @@ interface RequestRow {
   updated_at: string
 }
 
+interface RequestServiceRow {
+  request_id: string
+  service_id: string | null
+  service_name_snapshot: string
+  service_price_snapshot: number | string | null
+  service_duration_snapshot: number
+  display_order: number
+}
+
 interface MessageRow {
   id: string
   client_id: string
@@ -75,7 +93,10 @@ interface MessageRow {
   created_at: string
 }
 
-export function mapAdminRequests(rows: RequestRow[]): AdminRequest[] {
+export function mapAdminRequests(
+  rows: RequestRow[],
+  serviceRows: RequestServiceRow[] = [],
+): AdminRequest[] {
   return rows.map(row => ({
     id: row.id,
     clientId: row.client_id,
@@ -83,6 +104,18 @@ export function mapAdminRequests(rows: RequestRow[]): AdminRequest[] {
     clientPhone: row.client_phone,
     kind: row.kind,
     service: row.service ?? '',
+    treatments: serviceRows
+      .filter(service => service.request_id === row.id)
+      .sort((left, right) => left.display_order - right.display_order)
+      .map(service => ({
+        serviceId: service.service_id ?? undefined,
+        name: service.service_name_snapshot,
+        price: service.service_price_snapshot == null
+          ? undefined
+          : Number(service.service_price_snapshot),
+        durationMinutes: service.service_duration_snapshot,
+        displayOrder: service.display_order,
+      })),
     preferredDates: row.preferred_dates ?? [],
     dayPeriod: row.day_period,
     message: row.client_message ?? '',
