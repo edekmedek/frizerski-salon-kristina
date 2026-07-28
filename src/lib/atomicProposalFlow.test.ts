@@ -45,7 +45,7 @@ describe('atomic client request proposal flow', () => {
   it('refreshes inbox and calendar only after a successful proposal', () => {
     expect(adminSource).toContain('await refreshAdminServerState()')
     expect(adminSource).toContain(
-      "setNotice('Prijedlog nije spremljen. Termin nije dodan u kalendar.')",
+      'setNotice(`Prijedlog nije spremljen. Termin nije dodan u kalendar.',
     )
   })
 

@@ -459,7 +459,8 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     })
     if (proposalResult.error || !(proposalResult.data as { appointment_id: string }[] | null)?.[0]?.appointment_id) {
       setInboxBusy(false)
-      setNotice('Prijedlog nije spremljen. Termin nije dodan u kalendar.')
+      console.error('admin_create_proposal_for_client_request failed', proposalResult.error)
+      setNotice(`Prijedlog nije spremljen. Termin nije dodan u kalendar.${proposalResult.error?.message ? ` ${proposalResult.error.message}` : ''}`)
       return
     }
     setInboxBusy(false)
@@ -660,7 +661,11 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     setInboxBusy(true)
     const { data: readAt, error } = await supabase.rpc('admin_open_client_request', { target_request_id: request.id })
     setInboxBusy(false)
-    if (error || !readAt) { setNotice('Zahtjev nije moguće otvoriti.'); return }
+    if (error || !readAt) {
+      console.error('admin_open_client_request failed', error)
+      setNotice(`Zahtjev nije moguće otvoriti.${error?.message ? ` ${error.message}` : ''}`)
+      return
+    }
     const opened = { ...request, readAt }
     setAdminRequests(current => current.map(item => item.id === request.id ? opened : item))
     setSelectedAdminRequest(opened)
@@ -694,10 +699,34 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       reply_message: reply,
     })
     setInboxBusy(false)
-    if (error) { setNotice('Odgovor na zahtjev nije spremljen.'); return false }
+    if (error) {
+      console.error('admin_respond_client_request failed', error)
+      setNotice(`Odgovor na zahtjev nije spremljen. ${error.message}`)
+      return false
+    }
     await loadAdminInbox()
     setSelectedAdminRequest(undefined)
     setNotice(status === 'rejected' ? 'Zahtjev je odbijen.' : 'Drugi prijedlog je poslan klijentu.')
+    return true
+  }
+
+  async function deleteAdminRequest(request: AdminRequest) {
+    if (!supabase) return false
+    if (!window.confirm(`Trajno obrisati zahtjev klijenta ${request.clientName}?`)) return false
+    setInboxBusy(true)
+    const { data: deleted, error } = await supabase.rpc('admin_delete_client_request', {
+      target_request_id: request.id,
+    })
+    setInboxBusy(false)
+    if (error || deleted !== true) {
+      console.error('admin_delete_client_request failed', error)
+      setNotice(`Zahtjev nije obrisan.${error?.message ? ` ${error.message}` : ''}`)
+      return false
+    }
+    setAdminRequests(current => current.filter(item => item.id !== request.id))
+    setSelectedAdminRequest(undefined)
+    await loadAdminInbox()
+    setNotice('Zahtjev je obrisan.')
     return true
   }
 
@@ -1258,7 +1287,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       {view === 'arhiva' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INSPIRACIJA I POVIJEST</p><h2>Arhiva frizura</h2></div><button className="primary" onClick={() => { setArchiveFiles([]); setArchiveOpen(true) }}>+ Dodaj tretman</button></div>{archiveProgress&&<p className="archive-progress" role="status">{archiveProgress}</p>}<div className="gallery">{supabase?treatmentArchives.map(entry => <article className="treatment-archive-card" key={entry.id}><div className="treatment-photo-grid">{entry.photos.map(photo=><figure key={photo.id}><a href={photo.imageUrl} target="_blank" rel="noreferrer"><img src={photo.thumbnailUrl||photo.imageUrl} alt={photo.phase==='before'?'Prije tretmana':'Poslije tretmana'} /></a><figcaption>{photo.phase==='before'?'Prije':'Poslije'}</figcaption><div className="archive-photo-actions"><label className="link">Zamijeni<input type="file" accept="image/*,.heic,.heif" onChange={event=>void replaceArchivePhoto(entry,photo.id,event.target.files?.[0])}/></label><button className="link danger-link" type="button" onClick={()=>void removeArchivePhoto(entry,photo.id)}>Obriši</button></div></figure>)}</div><div><small>{formatDate(entry.takenAt)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.notes}</p><button className="link" onClick={()=>void toggleArchiveVisibility(entry)}>{entry.visibleToClient?'Sakrij od klijenta':'Podijeli s klijentom'}</button></div></article>):data.hairstyles.map(entry => <article key={entry.id}><div className="photo-pair"><figure><img src={entry.before.thumb} alt="Prije" /><figcaption>Prije</figcaption></figure>{entry.after&&<figure><img src={entry.after.thumb} alt="Poslije" /><figcaption>Poslije</figcaption></figure>}</div><div><small>{formatDate(entry.date)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.note}</p></div></article>)}</div></section>}
       {view === 'postavke' && <section className="panel settings-panel"><div className="panel-head"><div><p className="eyebrow">SIGURNOST</p><h2>Postavke</h2></div></div><div className="settings-list"><div><div><strong>Administratorski PIN</strong><p>Postavite ili promijenite PIN koji štiti arhivu termina.</p></div><button className="secondary" type="button" onClick={()=>void openAdminPinSettings()}>{adminPinSet===false?'Postavi PIN':'Postavi ili promijeni PIN'}</button></div><div><div><strong>Arhiva termina</strong><p>Pregled prošlih termina zaštićen administratorskim PIN-om.</p></div><button className="secondary" type="button" onClick={()=>void openAppointmentArchive()}>Otvori arhivu</button></div></div></section>}
       {view === 'arhiva-termina' && appointmentArchiveUnlocked && <section className="panel appointment-archive"><div className="panel-head"><div><p className="eyebrow">ZAŠTIĆENI PREGLED</p><h2>Arhiva termina</h2></div><button className="secondary" type="button" onClick={()=>setView('postavke')}>Natrag</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{pastAppointments.map(item=><tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.noCharge?'no-charge':item.status}`}>{item.noCharge?'Privatno / gratis – bez naplate':appointmentStatusLabel(item.status)}</span></td><td><button className="link" type="button" onClick={()=>setAppointmentForm(item)}>Uredi</button></td></tr>)}</tbody></table>{pastAppointments.length===0&&<p className="empty-state">Nema evidentiranih prošlih termina.</p>}</div></section>}
-      {view === 'zahtjevi-live' && <AdminRequestInbox requests={activeAdminRequests} selected={selectedAdminRequest} busy={inboxBusy} duration={requestDraftDuration} onDurationChange={setRequestDurationOverride} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
+      {view === 'zahtjevi-live' && <AdminRequestInbox requests={activeAdminRequests} selected={selectedAdminRequest} busy={inboxBusy} duration={requestDraftDuration} onDurationChange={setRequestDurationOverride} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onDelete={deleteAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
       {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
     <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}

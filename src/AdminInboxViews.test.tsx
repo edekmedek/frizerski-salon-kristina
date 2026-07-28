@@ -39,7 +39,7 @@ const message: AdminMessage = {
 describe('administratorski zahtjevi', () => {
   it('otvara postojeći zahtjev tek pozivom trajne Supabase akcije', () => {
     const onOpen = vi.fn().mockResolvedValue(undefined)
-    render(<AdminRequestInbox requests={[request]} busy={false} onOpen={onOpen} onAccept={vi.fn()} onRespond={vi.fn()} onClose={vi.fn()} />)
+    render(<AdminRequestInbox requests={[request]} busy={false} onOpen={onOpen} onAccept={vi.fn()} onRespond={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByText('Novo')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /TEST Klijent/ }))
     expect(onOpen).toHaveBeenCalledWith(request)
@@ -48,13 +48,16 @@ describe('administratorski zahtjevi', () => {
   it('prikazuje puni sadržaj te prihvaćanje i drugi prijedlog', async () => {
     const onAccept = vi.fn()
     const onRespond = vi.fn().mockResolvedValue(true)
-    render(<AdminRequestInbox requests={[request]} selected={request} busy={false} onOpen={vi.fn()} onAccept={onAccept} onRespond={onRespond} onClose={vi.fn()} />)
+    const onDelete = vi.fn().mockResolvedValue(true)
+    render(<AdminRequestInbox requests={[request]} selected={request} busy={false} onOpen={vi.fn()} onAccept={onAccept} onRespond={onRespond} onDelete={onDelete} onClose={vi.fn()} />)
     expect(screen.getByText('Molim termin poslije posla.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Prihvati i odaberi termin' }))
     expect(onAccept).toHaveBeenCalledWith(request)
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Mogu 29. 7. u 15:30.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Pošalji drugi prijedlog' }))
     await waitFor(() => expect(onRespond).toHaveBeenCalledWith(request, 'in_review', 'Mogu 29. 7. u 15:30.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Obriši zahtjev' }))
+    expect(onDelete).toHaveBeenCalledWith(request)
   })
 })
 

@@ -9,12 +9,13 @@ interface RequestInboxProps {
   onOpen: (request: AdminRequest) => Promise<void>
   onAccept: (request: AdminRequest) => void
   onRespond: (request: AdminRequest, status: 'in_review' | 'rejected', reply: string) => Promise<boolean>
+  onDelete: (request: AdminRequest) => Promise<boolean>
   onClose: () => void
   duration?: number
   onDurationChange?: (duration: number) => void
 }
 
-export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, onRespond, onClose, duration, onDurationChange }: RequestInboxProps) {
+export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, onRespond, onDelete, onClose, duration, onDurationChange }: RequestInboxProps) {
   const [proposal, setProposal] = useState('')
   const pending = requests.filter(item => item.status === 'pending' || item.status === 'in_review')
 
@@ -44,6 +45,9 @@ export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, 
           if (reason?.trim()) await onRespond(selected, 'rejected', reason)
         }}>Odbij zahtjev</button>
       </div>}
+      <div className="request-actions">
+        <button className="danger-action" disabled={busy} onClick={() => void onDelete(selected)}>Obriši zahtjev</button>
+      </div>
     </section>
   }
 
