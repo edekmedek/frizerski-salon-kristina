@@ -32,7 +32,7 @@ export function savedMessagePushNotice(outcome: ClientPushOutcome) {
 export const CLIENT_MESSAGES_HASH = '#/client/messages'
 export const CLIENT_NOTIFICATIONS_HASH = '#/client/notifications'
 export const CLIENT_MESSAGE_NOTIFICATION_TAG = 'salon-kristina-message'
-export const SALON_PUSH_WORKER_URL = `${import.meta.env.BASE_URL}push-sw.js?v=2`
+export const SALON_PUSH_WORKER_URL = `${import.meta.env.BASE_URL}push-sw.js?v=3`
 
 export function isClientMessagesLocation(hash: string) {
   return hash === CLIENT_MESSAGES_HASH

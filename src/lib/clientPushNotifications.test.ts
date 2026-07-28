@@ -58,7 +58,7 @@ describe('client message system notifications', () => {
       ready: Promise.resolve(registration),
     })
     expect(register).toHaveBeenCalledWith(
-      expect.stringContaining('push-sw.js?v=2'),
+      expect.stringContaining('push-sw.js?v=3'),
       { updateViaCache: 'none' },
     )
     expect(update).toHaveBeenCalledOnce()

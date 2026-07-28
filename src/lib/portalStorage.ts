@@ -33,8 +33,8 @@ export function getPortalSession(): PortalSession | null {
   }
 }
 
-export function setPortalSession(session: PortalSession | null) {
+export function setPortalSession(session: PortalSession | null, notify = true) {
   if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
   else sessionStorage.removeItem(SESSION_KEY)
-  window.dispatchEvent(new CustomEvent('salon-session-updated'))
+  if (notify) window.dispatchEvent(new CustomEvent('salon-session-updated'))
 }

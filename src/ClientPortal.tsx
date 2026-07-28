@@ -50,6 +50,8 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [detail, setDetail] = useState<AppointmentRow | null>(null)
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [portalLoadError, setPortalLoadError] = useState<{ kind: 'access' | 'data'; message: string } | null>(null)
   const [respondingRequestId, setRespondingRequestId] = useState('')
   const [highlightedMessageIds, setHighlightedMessageIds] = useState<string[]>([])
   const [messageDraft, setMessageDraft] = useState('')
@@ -208,9 +210,65 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         supabaseClient.from('active_service_prices').select('category_name,name,price'),
         supabaseClient.from('bookable_service_prices').select('id,category_name,name,price,duration_minutes'),
       ])
-      const firstError = [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult, pricesResult, bookableResult].find(result => result.error)?.error
-      if (firstError) {
-        if (active) { setNotice('Podatke portala trenutačno nije moguće učitati.'); setLoading(false) }
+      console.info('[client-portal] client account lookup', {
+        clientId,
+        found: Boolean(clientResult.data),
+        status: clientResult.status,
+      })
+      if (clientResult.error) {
+        console.error('[client-portal] client account lookup failed', {
+          clientId,
+          status: clientResult.status,
+          error: clientResult.error,
+        })
+        if (active) {
+          setPortalLoadError({
+            kind: clientResult.status === 401 || clientResult.status === 403 ? 'access' : 'data',
+            message: clientResult.error.message,
+          })
+          setLoading(false)
+        }
+        return
+      }
+      if (!clientResult.data) {
+        console.error('[client-portal] client account link is unavailable', {
+          clientId,
+          status: clientResult.status,
+        })
+        if (active) {
+          setPortalLoadError({
+            kind: 'access',
+            message: 'Prijavljeni račun nema pristup ovom klijentskom profilu.',
+          })
+          setLoading(false)
+        }
+        return
+      }
+      const portalResults = [
+        ['appointments', appointmentResult],
+        ['client_requests', requestResult],
+        ['messages', messageResult],
+        ['appointment_reminders', reminderResult],
+        ['treatment_photo_sets', photoResult],
+        ['active_service_prices', pricesResult],
+        ['bookable_service_prices', bookableResult],
+      ] as const
+      const failedResult = portalResults.find(([, result]) => result.error)
+      if (failedResult) {
+        const [resource, result] = failedResult
+        console.error('[client-portal] portal data load failed', {
+          resource,
+          status: result.status,
+          error: result.error,
+        })
+        if (active) {
+          setClient(clientResult.data as ClientRow)
+          setPortalLoadError({
+            kind: 'data',
+            message: result.error?.message ?? 'Nepoznata pogreška pri učitavanju podataka.',
+          })
+          setLoading(false)
+        }
         return
       }
       const signedPhotos = (await Promise.all(((photoResult.data ?? []) as TreatmentSetRow[]).flatMap(treatment =>
@@ -292,7 +350,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       unsubscribeForeground()
       void supabaseClient.removeChannel(channel)
     }
-  }, [clientId])
+  }, [clientId, loadAttempt])
 
   useEffect(() => {
     const supabaseClient = supabase
@@ -446,7 +504,13 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   }
 
   if (loading) return <main className="access-page"><section className="access-card"><h1>Učitavanje portala…</h1></section></main>
-  if (!client) return <main className="access-page"><section className="access-card"><h1>Pristup nije dostupan</h1><p>Prijavite se ponovno.</p><button className="primary" onClick={onLogout}>Odjava</button></section></main>
+  const retryPortalLoad = () => {
+    setLoading(true)
+    setPortalLoadError(null)
+    setLoadAttempt(value=>value+1)
+  }
+  if (portalLoadError) return <main className="access-page"><section className="access-card"><h1>{portalLoadError.kind==='access'?'Pristup nije dopušten':'Portal trenutačno nije moguće učitati'}</h1><p>{portalLoadError.message}</p><button className="primary" onClick={retryPortalLoad}>Pokušaj ponovno</button>{portalLoadError.kind==='access'&&<button className="link" onClick={onLogout}>Odjava</button>}</section></main>
+  if (!client) return <main className="access-page"><section className="access-card"><h1>Portal trenutačno nije moguće učitati</h1><p>Klijentski profil nije učitan.</p><button className="primary" onClick={retryPortalLoad}>Pokušaj ponovno</button></section></main>
 
   const appointmentService = (item: AppointmentRow) => item.service_name_snapshot ?? item.service ?? ''
   const requestCategories = [...new Set(bookableServices.map(item=>item.categoryName))]
