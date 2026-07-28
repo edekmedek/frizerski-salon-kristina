@@ -344,6 +344,39 @@
   min-width: 0;
 }
 
+.appointment-detail-view,
+.appointment-detail-treatments,
+.reschedule-form,
+.cancellation-form {
+  display: grid;
+  gap: 14px;
+}
+
+.appointment-detail-treatments {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffaf7;
+}
+
+.appointment-detail-treatments ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.appointment-detail-treatments li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reschedule-form .overlap-warning {
+  margin: 0;
+}
+
 .request-draft-summary ul {
   max-height: 42px;
   margin: 2px 0 0;
