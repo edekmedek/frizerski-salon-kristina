@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatDate, formatDateTime } from './lib/date'
 import { dayPeriodLabel, requestStatusLabel, type AdminMessage, type AdminRequest } from './lib/adminInbox'
+import type { Service, ServiceCategory } from './types'
 
 interface RequestInboxProps {
   requests: AdminRequest[]
@@ -13,11 +14,26 @@ interface RequestInboxProps {
   onClose: () => void
   duration?: number
   onDurationChange?: (duration: number) => void
+  services: Service[]
+  categories: ServiceCategory[]
+  onAddTreatment: (service: Service) => void
+  onRemoveTreatment: (serviceId: string) => void
+  onTreatmentDurationChange: (serviceId: string, duration: number) => void
 }
 
-export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, onRespond, onDelete, onClose, duration, onDurationChange }: RequestInboxProps) {
+export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, onRespond, onDelete, onClose, duration, onDurationChange, services, categories, onAddTreatment, onRemoveTreatment, onTreatmentDurationChange }: RequestInboxProps) {
   const [proposal, setProposal] = useState('')
+  const [treatmentCategoryId, setTreatmentCategoryId] = useState('')
   const pending = requests.filter(item => item.status === 'pending' || item.status === 'in_review')
+  const selectedServiceIds = new Set(selected?.treatments.flatMap(item => item.serviceId ? [item.serviceId] : []) ?? [])
+  const availableCategories = categories
+    .filter(category => category.isActive && services.some(service =>
+      service.categoryId === category.id && service.isActive && service.isBookable))
+    .sort((left, right) => left.displayOrder - right.displayOrder)
+  const categoryServices = services
+    .filter(service => service.categoryId === treatmentCategoryId
+      && service.isActive && service.isBookable && !selectedServiceIds.has(service.id))
+    .sort((left, right) => left.displayOrder - right.displayOrder)
 
   if (selected) {
     return <section className="panel inbox-detail">
@@ -25,7 +41,7 @@ export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, 
       <dl className="detail-grid">
         <div><dt>Status</dt><dd>{requestStatusLabel(selected.status)}</dd></div>
         <div><dt>Poslano</dt><dd>{formatDateTime(selected.createdAt)}</dd></div>
-        <div><dt>Tretman</dt><dd>{selected.service || 'Nije navedeno'}</dd></div>
+        <div><dt>Klijentova izvorna želja</dt><dd>{selected.service || 'Nije navedeno'}</dd></div>
         <div><dt>Željeni datum</dt><dd>{selected.preferredDates.map(formatDate).join(', ') || 'Nije naveden'}</dd></div>
         <div><dt>Dio dana</dt><dd>{dayPeriodLabel(selected.dayPeriod)}</dd></div>
         <div><dt>Telefon</dt><dd>{selected.clientPhone}</dd></div>
@@ -34,8 +50,55 @@ export function AdminRequestInbox({ requests, selected, busy, onOpen, onAccept, 
       {selected.clientReply && <article className="full-message"><strong>Odgovor klijenta na prijedlog</strong><p>{selected.clientReply}</p></article>}
       {selected.adminReply && <article className="admin-reply"><strong>Kristinin odgovor</strong><p>{selected.adminReply}</p></article>}
       {(selected.status === 'pending' || selected.status === 'in_review') && <div className="request-detail-actions">
-        {selected.kind === 'appointment' && duration&&onDurationChange&&<label>Ukupno trajanje termina (min)<input type="number" min="15" step="15" value={duration} onChange={event=>onDurationChange(Math.max(15,Math.round(Number(event.target.value)/15)*15))}/></label>}
-        {selected.kind === 'appointment' && <button className="primary" disabled={busy} onClick={() => onAccept(selected)}>Prihvati i odaberi termin</button>}
+        {selected.kind === 'appointment' && <section className="request-treatment-editor">
+          <div>
+            <h3>Tretmani za termin</h3>
+            <p>Kristina određuje konačne tretmane i trajanja prije slanja prijedloga.</p>
+          </div>
+          <div className="request-treatment-list">
+            {selected.treatments.map(treatment => <div className="request-treatment-row" key={treatment.serviceId}>
+              <strong>{treatment.name}</strong>
+              <label>Trajanje (min)
+                <input
+                  aria-label={`Trajanje ${treatment.name}`}
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  step="5"
+                  value={treatment.durationMinutes}
+                  onChange={event => treatment.serviceId && onTreatmentDurationChange(treatment.serviceId, Number(event.target.value))}
+                />
+              </label>
+              <button type="button" className="link danger-link" onClick={() => treatment.serviceId && onRemoveTreatment(treatment.serviceId)}>Ukloni</button>
+            </div>)}
+            {selected.treatments.length === 0 && <p className="empty-state">Za termin nije odabran nijedan tretman.</p>}
+          </div>
+          {!treatmentCategoryId
+            ? <div className="request-treatment-categories" aria-label="Kategorije tretmana">
+                {availableCategories.map(category => <button type="button" className="secondary" key={category.id} onClick={() => setTreatmentCategoryId(category.id)}>{category.name}</button>)}
+              </div>
+            : <div className="request-treatment-services">
+                <button type="button" className="link" onClick={() => setTreatmentCategoryId('')}>‹ Kategorije</button>
+                {categoryServices.map(service => <button type="button" className="secondary" key={service.id} onClick={() => {
+                  onAddTreatment(service)
+                  setTreatmentCategoryId('')
+                }}>{service.name}</button>)}
+                {categoryServices.length === 0 && <p className="empty-state">Sve usluge iz ove kategorije već su dodane.</p>}
+              </div>}
+          <label>Ukupno trajanje termina (min)
+            <input
+              aria-label="Ukupno trajanje termina"
+              type="number"
+              inputMode="numeric"
+              min="5"
+              step="5"
+              readOnly={selected.treatments.length > 0}
+              value={duration ?? 0}
+              onChange={event => onDurationChange?.(Math.max(5, Math.round(Number(event.target.value) / 5) * 5))}
+            />
+          </label>
+        </section>}
+        {selected.kind === 'appointment' && <button className="primary" disabled={busy || !duration || duration < 5} onClick={() => onAccept(selected)}>Prihvati i odaberi termin</button>}
         <label>Prijedlog drugog datuma i vremena ili poruka
           <textarea rows={3} value={proposal} onChange={event => setProposal(event.target.value)} placeholder="Npr. Mogu ponuditi 29. 7. u 15:30." />
         </label>

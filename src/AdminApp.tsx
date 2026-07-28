@@ -22,7 +22,8 @@ import { calendarEventLayout, calendarOverlapDepth, calendarTimeMarks, calendarW
 import { calendarDateAfterMove, canOpenMainCalendarDate, isArchivedAppointment } from './lib/calendarAccess'
 import { createEmptyAdminPinFields, isValidAdminPin, isValidCurrentAdminPin } from './lib/adminPin'
 import { addTreatmentPreservingOverrides, appointmentTreatmentLabel, finalAppointmentPrice, normalizeAppointmentTreatmentTotals, removeTreatmentPreservingOverrides, treatmentTotals } from './lib/appointmentTreatments'
-import { isValidAppointmentDuration, normalizeDurationToQuarter, suggestedTreatmentDuration } from './lib/appointmentDuration'
+import { isValidAppointmentDuration } from './lib/appointmentDuration'
+import { addRequestTreatment, initialRequestTreatmentDraft, removeRequestTreatment, requestTreatmentDuration, updateRequestTreatmentDuration } from './lib/requestTreatmentDraft'
 import { syncStatusLabel, type SyncStatus } from './lib/syncStatus'
 import { adminInboxCounts, adminRequestNotificationVersion, hasNewUnreadAdminRequest, mapAdminMessages, mapAdminRequests, type AdminMessage, type AdminRequest } from './lib/adminInbox'
 import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppointmentServiceRow } from './lib/adminAppointmentSync'
@@ -440,12 +441,13 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }
 
   async function sendSelectedRequestProposal() {
-    if (!selectedAdminRequest || !requestDraftTime || !supabase || !isValidAppointmentDuration(requestDraftDuration)) return
+    if (!selectedAdminRequest || !requestDraftTime || !supabase || requestDraftDuration < 5 || requestDraftDuration % 5 !== 0) return
     const endTime = minutesToTime(timeToMinutes(requestDraftTime) + requestDraftDuration)
-    const proposal = `Prijedlog termina: ${formatDate(selectedCalendarDate)} od ${requestDraftTime} do ${endTime} (${requestDraftDuration} min)${selectedAdminRequest.service?` za uslugu ${selectedAdminRequest.service}`:''}. Molimo potvrdite odgovara li vam termin.`
+    const treatmentLabel = selectedAdminRequest.treatments.map(item => item.name).join(' + ')
+    const proposal = `Prijedlog termina: ${formatDate(selectedCalendarDate)} od ${requestDraftTime} do ${endTime} (${requestDraftDuration} min)${treatmentLabel ? ` za uslugu ${treatmentLabel}` : ''}. Molimo potvrdite odgovara li vam termin.`
     setInboxBusy(true)
     const proposedStartsAt = new Date(`${selectedCalendarDate}T${requestDraftTime}`).toISOString()
-    const proposalResult = await supabase.rpc('admin_create_proposal_for_client_request', {
+    const proposalResult = await supabase.rpc('admin_create_custom_proposal_for_client_request', {
       target_request_id: selectedAdminRequest.id,
       target_starts_at: proposedStartsAt,
       target_total_duration: requestDraftDuration,
@@ -454,12 +456,14 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       reply_message: proposal,
       target_notes: selectedAdminRequest.message,
       target_no_charge: false,
-      target_service_ids: selectedRequestServices.map(item=>item.id),
-      target_total_price: selectedRequestServices.reduce((sum,item)=>sum+item.price,0),
+      target_treatments: selectedAdminRequest.treatments.map(item => ({
+        service_id: item.serviceId,
+        duration_minutes: item.durationMinutes,
+      })),
     })
     if (proposalResult.error || !(proposalResult.data as { appointment_id: string }[] | null)?.[0]?.appointment_id) {
       setInboxBusy(false)
-      console.error('admin_create_proposal_for_client_request failed', proposalResult.error)
+      console.error('admin_create_custom_proposal_for_client_request failed', proposalResult.error)
       setNotice(`Prijedlog nije spremljen. Termin nije dodan u kalendar.${proposalResult.error?.message ? ` ${proposalResult.error.message}` : ''}`)
       return
     }
@@ -666,28 +670,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       setNotice(`Zahtjev nije moguće otvoriti.${error?.message ? ` ${error.message}` : ''}`)
       return
     }
-    const opened = { ...request, readAt }
+    const draftTreatments = initialRequestTreatmentDraft(request, serviceCatalog)
+    const opened = { ...request, readAt, treatments: draftTreatments }
     setAdminRequests(current => current.map(item => item.id === request.id ? opened : item))
     setSelectedAdminRequest(opened)
-    const requestedDuration = request.treatments.length
-      ? request.treatments.reduce((sum,item)=>sum+item.durationMinutes,0)
-      : serviceCatalog.filter(item=>request.service.split(' + ').includes(item.name))
-        .reduce((sum,item)=>sum+(item.durationMinutes??0),0)
-    setRequestDurationOverride(normalizeDurationToQuarter((request.proposedDurationMinutes??requestedDuration)||30))
-    const requestedDate = request.preferredDates[0]
-    if (requestedDate) {
-      const periodTimes = timeOptions.filter(time =>
-        request.dayPeriod === 'any'
-        || (request.dayPeriod === 'morning' ? time < '12:00' : time >= '12:00'))
-      setRequestDraftTime(
-        periodTimes.find(time => !isTimeUnavailable(requestedDate, time, request.service, data.appointments))
-        ?? periodTimes[0]
-        ?? '08:00',
-      )
-      requestNeedsScrollRef.current = true
-      await requestCalendarDate(requestedDate)
-      setView('pregled')
-    }
+    const requestedDuration = draftTreatments.reduce((sum, item) => sum + item.durationMinutes, 0)
+    setRequestDurationOverride(Math.max(5, (request.proposedDurationMinutes ?? requestedDuration) || 30))
   }
 
   async function respondToAdminRequest(request: AdminRequest, status: 'in_review' | 'rejected', reply: string) {
@@ -731,30 +719,16 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }
 
   function acceptAdminRequest(request: AdminRequest) {
-    const requestedNames = request.treatments.length
-      ? request.treatments.map(item=>item.name)
-      : request.service.split(' + ').filter(Boolean)
-    const requestedIds = request.treatments.flatMap(item=>item.serviceId?[item.serviceId]:[])
-    const selectedServices = serviceCatalog.filter(item =>
-      item.isActive && item.isBookable
-      && (requestedIds.includes(item.id) || requestedNames.includes(item.name)))
-    if ((requestedIds.length > 0 || requestedNames.length > 0) && !selectedServices.length) {
-      setNotice('Tretmani iz zahtjeva više nisu dostupni u cjeniku.')
-      return
-    }
     const date = request.preferredDates[0] || localDateString(new Date())
     const periodTimes = timeOptions.filter(time =>
       request.dayPeriod === 'any'
       || (request.dayPeriod === 'morning' ? time < '12:00' : time >= '12:00'))
-    const serviceLabel = selectedServices.map(item=>item.name).join(' + ')
+    const serviceLabel = request.treatments.map(item=>item.name).join(' + ')
     const time = periodTimes.find(candidate => !isTimeUnavailable(date, candidate, serviceLabel, data.appointments)) ?? periodTimes[0] ?? '08:00'
-    const appointment = selectedServices.reduce(addTreatmentPreservingOverrides, emptyAppointment(data.appointments))
-    setRequestDurationOverride(normalizeDurationToQuarter(
-      selectedServices.length ? suggestedTreatmentDuration(appointment.treatments ?? []) : 30,
-    ))
-    setSourceRequestId(request.id)
-    setAppointmentForm({ ...appointment, clientId: request.clientId, dateTime: `${date}T${time}`, note: request.message, confirmationStatus:'pending' })
-    setSelectedAdminRequest(undefined)
+    setRequestDraftTime(time)
+    requestNeedsScrollRef.current = true
+    void requestCalendarDate(date)
+    setView('pregled')
   }
 
   async function openAdminMessage(message: AdminMessage) {
@@ -1252,23 +1226,14 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const selectedAppointmentCategoryId = appointmentForm?.serviceCategoryId
     ?? serviceCatalog.find(item => item.id === appointmentForm?.serviceId)?.categoryId
     ?? ''
-  const selectedRequestServices = selectedAdminRequest
-    ? serviceCatalog.filter(item =>
-        selectedAdminRequest.treatments.some(treatment=>treatment.serviceId===item.id)
-        || selectedAdminRequest.treatments.some(treatment=>treatment.name===item.name)
-        || selectedAdminRequest.service.split(' + ').includes(item.name))
-    : []
-  const requestDraftDuration = requestDurationOverride
-    ?? normalizeDurationToQuarter(
-      suggestedTreatmentDuration(selectedRequestServices.map(item=>({
-        serviceId:item.id,name:item.name,price:item.price,durationMinutes:item.durationMinutes,
-      }))) || (selectedAdminRequest ? serviceDefinition(selectedAdminRequest.service).totalDuration : 30),
-    )
+  const requestDraftDuration = selectedAdminRequest
+    ? requestTreatmentDuration(selectedAdminRequest.treatments, requestDurationOverride ?? 30)
+    : requestDurationOverride ?? 30
   const requestDraftLayout = selectedAdminRequest && requestDraftTime
     ? calendarEventLayout(`${selectedCalendarDate}T${requestDraftTime}`, requestDraftDuration)
     : undefined
   const requestDraftConflicts = selectedAdminRequest && requestDraftTime
-    ? conflictingAppointments(selectedCalendarDate, requestDraftTime, selectedAdminRequest.service, data.appointments, '', requestDraftDuration)
+    ? conflictingAppointments(selectedCalendarDate, requestDraftTime, selectedAdminRequest.treatments.map(item => item.name).join(' + '), data.appointments, '', requestDraftDuration)
     : []
   return <div className="app-shell">
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
@@ -1278,7 +1243,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     <main><header><div><p className="eyebrow">Salon Kristina</p><h1>{title}</h1></div><div className={`header-actions sync-${syncStatus}`}><span className="status-dot" /> {syncStatusLabel(syncStatus)}</div></header>
       {view === 'pregled' && <div className="dashboard-inbox-summary"><button onClick={()=>changeView('zahtjevi-live')}><strong>{inboxCounts.requests}</strong><span>Novi zahtjevi</span></button><button onClick={()=>changeView('poruke-live')}><strong>{inboxCounts.messages}</strong><span>Nove poruke</span></button></div>}
       {view === 'salon-dashboard' && <SalonDashboard appointments={data.appointments} clients={data.clients} unreadMessages={inboxCounts.messages} unreadRequests={inboxCounts.requests} doorbell={doorbellService} onOpenSchedule={()=>changeView('pregled')} onOpenMessages={()=>changeView('poruke-live')} onOpenRequests={()=>changeView('zahtjevi-live')}/>}
-      {view === 'pregled' && <section className="day-schedule"><div className="schedule-toolbar"><div><p className="eyebrow">DANAŠNJI RASPORED</p><h2>{new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString('hr-HR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h2></div><div className="schedule-navigation">{!viewingToday&&<button className="secondary day-arrow" type="button" aria-label="Prethodni dan" onClick={()=>moveCalendarDay(-1)}>‹</button>}<button className="secondary today-button" type="button" onClick={()=>void requestCalendarDate(todayCalendarDate)}>Danas</button><button className="secondary day-arrow" type="button" aria-label="Sljedeći dan" onClick={()=>moveCalendarDay(1)}>›</button><input aria-label="Odaberite datum rasporeda" type="date" min={todayCalendarDate} value={selectedCalendarDate} onChange={event=>void requestCalendarDate(event.target.value)}/></div></div><p className={`working-hours-label ${workingHours?'':'closed'}`}>{workingHoursLabel}</p><p className="schedule-hint">Radno vrijeme označeno je toplom pozadinom; termini izvan njega i dalje su dopušteni.</p><div className="calendar-scroll"><div className="day-calendar"><div className="calendar-time-axis" aria-hidden="true">{calendarMarks.map(mark=><span className={mark.isHour?'hour':'half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}>{mark.label}</span>)}</div><div className={`calendar-grid ${workingHours?'has-working-hours':'closed-day'}`} onClick={openCalendarSlot}>{workingHours&&<span className="working-hours-band" aria-hidden="true" style={{top:`${workingHours.topPercent}%`,height:`${workingHours.heightPercent}%`}}/>}{calendarMarks.map(mark=><span className={mark.isHour?'calendar-line hour':'calendar-line half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}/>)}{selectedAdminRequest&&requestDraftLayout?.visible&&<div ref={requestDraftRef} data-request-id={selectedAdminRequest.id} className={`request-draft-event ${requestDraftConflicts.length?'has-conflict':''}`} style={{top:`${requestDraftLayout.topPercent}%`,height:`max(${requestDraftLayout.heightPercent}%, 52px)`}} onPointerDown={event=>{if((event.target as HTMLElement).closest('button'))return;event.currentTarget.setPointerCapture(event.pointerId)}} onPointerMove={event=>{if(!event.currentTarget.hasPointerCapture(event.pointerId))return;const grid=event.currentTarget.parentElement?.getBoundingClientRect();if(grid)setRequestDraftTime(timeFromCalendarPosition(event.clientY-grid.top,grid.height))}} onPointerUp={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}} onClick={event=>event.stopPropagation()}><div className="request-draft-time"><strong>{requestDraftTime}–{minutesToTime(timeToMinutes(requestDraftTime)+requestDraftDuration)}</strong><span>{requestDraftDuration} min</span></div><div className="request-draft-summary"><strong>{selectedAdminRequest.clientName}</strong><span>{selectedAdminRequest.service||'Bez odabrane usluge'}</span>{(selectedAdminRequest.clientReply||selectedAdminRequest.message)&&<small>{selectedAdminRequest.clientReply?`Nova želja klijenta: ${selectedAdminRequest.clientReply}`:selectedAdminRequest.message}</small>}</div><div className="request-draft-controls">{requestDraftConflicts.length>0&&<em>Preklapanje s {requestDraftConflicts.length} {requestDraftConflicts.length===1?'terminom':'termina'} je dopušteno</em>}<button type="button" disabled={inboxBusy} onClick={()=>void sendSelectedRequestProposal()}>{inboxBusy?'Slanje…':'Pošalji prijedlog termina'}</button><button type="button" className="request-draft-close" aria-label="Zatvori probni termin" onClick={()=>{setSelectedAdminRequest(undefined);setRequestDraftTime('')}}>×</button></div></div>}{calendarAppointments.map((item,index)=>{const catalogDuration=serviceCatalog.find(service=>service.id===item.serviceId)?.durationMinutes;const layout=calendarEventLayout(item.dateTime,item.serviceDuration??catalogDuration);if(!layout.visible)return null;const overlap=calendarOverlapDepth(calendarAppointments,index);const start=item.dateTime.slice(11,16);const end=minutesToTime(timeToMinutes(start)+layout.displayDuration);const pending=item.confirmationStatus==='pending';return <button type="button" data-appointment-id={item.id} className={`calendar-event ${item.status} ${item.noCharge?'no-charge':''} ${pending?'pending-confirmation':''} ${overlap.overlaps?'has-overlap':''} ${overlap.depth>0?'overlap-top':''}`} style={{top:`${layout.topPercent}%`,height:`max(${layout.heightPercent}%, 34px)`,left:`${8+Math.min(overlap.depth,3)*12}px`}} key={item.id} onClick={event=>{event.stopPropagation();setAppointmentForm(item)}}><time>{start}–{end}</time><strong>{findClientName(data.clients,item.clientId)}</strong><span>{item.service||'Termin bez tretmana'}</span><small>{pending?'Čeka potvrdu':item.noCharge?'Gratis':appointmentStatusLabel(item.status)}</small></button>})}</div></div></div></section>}
+      {view === 'pregled' && <section className="day-schedule"><div className="schedule-toolbar"><div><p className="eyebrow">DANAŠNJI RASPORED</p><h2>{new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString('hr-HR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h2></div><div className="schedule-navigation">{!viewingToday&&<button className="secondary day-arrow" type="button" aria-label="Prethodni dan" onClick={()=>moveCalendarDay(-1)}>‹</button>}<button className="secondary today-button" type="button" onClick={()=>void requestCalendarDate(todayCalendarDate)}>Danas</button><button className="secondary day-arrow" type="button" aria-label="Sljedeći dan" onClick={()=>moveCalendarDay(1)}>›</button><input aria-label="Odaberite datum rasporeda" type="date" min={todayCalendarDate} value={selectedCalendarDate} onChange={event=>void requestCalendarDate(event.target.value)}/></div></div><p className={`working-hours-label ${workingHours?'':'closed'}`}>{workingHoursLabel}</p><p className="schedule-hint">Radno vrijeme označeno je toplom pozadinom; termini izvan njega i dalje su dopušteni.</p><div className="calendar-scroll"><div className="day-calendar"><div className="calendar-time-axis" aria-hidden="true">{calendarMarks.map(mark=><span className={mark.isHour?'hour':'half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}>{mark.label}</span>)}</div><div className={`calendar-grid ${workingHours?'has-working-hours':'closed-day'}`} onClick={openCalendarSlot}>{workingHours&&<span className="working-hours-band" aria-hidden="true" style={{top:`${workingHours.topPercent}%`,height:`${workingHours.heightPercent}%`}}/>}{calendarMarks.map(mark=><span className={mark.isHour?'calendar-line hour':'calendar-line half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}/>)}{selectedAdminRequest&&requestDraftLayout?.visible&&<div ref={requestDraftRef} data-request-id={selectedAdminRequest.id} className={`request-draft-event ${requestDraftConflicts.length?'has-conflict':''}`} style={{top:`${requestDraftLayout.topPercent}%`,height:`max(${requestDraftLayout.heightPercent}%, 52px)`}} onPointerDown={event=>{if((event.target as HTMLElement).closest('button'))return;event.currentTarget.setPointerCapture(event.pointerId)}} onPointerMove={event=>{if(!event.currentTarget.hasPointerCapture(event.pointerId))return;const grid=event.currentTarget.parentElement?.getBoundingClientRect();if(grid)setRequestDraftTime(timeFromCalendarPosition(event.clientY-grid.top,grid.height))}} onPointerUp={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}} onClick={event=>event.stopPropagation()}><div className="request-draft-time"><strong>{requestDraftTime}–{minutesToTime(timeToMinutes(requestDraftTime)+requestDraftDuration)}</strong><span>{requestDraftDuration} min</span></div><div className="request-draft-summary"><strong>{selectedAdminRequest.clientName}</strong>{selectedAdminRequest.treatments.length?<ul>{selectedAdminRequest.treatments.map(item=><li key={item.serviceId}>{item.name} · {item.durationMinutes} min</li>)}</ul>:<span>Bez odabrane usluge</span>}{(selectedAdminRequest.clientReply||selectedAdminRequest.message)&&<small>{selectedAdminRequest.clientReply?`Nova želja klijenta: ${selectedAdminRequest.clientReply}`:selectedAdminRequest.message}</small>}</div><div className="request-draft-controls">{requestDraftConflicts.length>0&&<em>Preklapanje s {requestDraftConflicts.length} {requestDraftConflicts.length===1?'terminom':'termina'} je dopušteno</em>}<button type="button" disabled={inboxBusy} onClick={()=>void sendSelectedRequestProposal()}>{inboxBusy?'Slanje…':'Pošalji prijedlog termina'}</button><button type="button" className="request-draft-close" aria-label="Zatvori probni termin" onClick={()=>{setSelectedAdminRequest(undefined);setRequestDraftTime('')}}>×</button></div></div>}{calendarAppointments.map((item,index)=>{const catalogDuration=serviceCatalog.find(service=>service.id===item.serviceId)?.durationMinutes;const layout=calendarEventLayout(item.dateTime,item.serviceDuration??catalogDuration);if(!layout.visible)return null;const overlap=calendarOverlapDepth(calendarAppointments,index);const start=item.dateTime.slice(11,16);const end=minutesToTime(timeToMinutes(start)+layout.displayDuration);const pending=item.confirmationStatus==='pending';return <button type="button" data-appointment-id={item.id} className={`calendar-event ${item.status} ${item.noCharge?'no-charge':''} ${pending?'pending-confirmation':''} ${overlap.overlaps?'has-overlap':''} ${overlap.depth>0?'overlap-top':''}`} style={{top:`${layout.topPercent}%`,height:`max(${layout.heightPercent}%, 34px)`,left:`${8+Math.min(overlap.depth,3)*12}px`}} key={item.id} onClick={event=>{event.stopPropagation();setAppointmentForm(item)}}><time>{start}–{end}</time><strong>{findClientName(data.clients,item.clientId)}</strong><span>{item.service||'Termin bez tretmana'}</span><small>{pending?'Čeka potvrdu':item.noCharge?'Gratis':appointmentStatusLabel(item.status)}</small></button>})}</div></div></div></section>}
       {view === 'klijenti' && <section className="panel"><div className="panel-head stack-mobile"><div><p className="eyebrow">KARTOTEKA</p><h2>Moji klijenti</h2></div><div className="toolbar"><input aria-label="Pretraži klijente" placeholder="Pretraži ime ili telefon…" value={query} onChange={e => setQuery(e.target.value)} /><button className="primary" onClick={() => {setNewClientPin('');setClientForm(emptyClient())}}>+ Novi klijent</button></div></div>
         <div className="client-grid">{filteredClients.map(client => { const portalStatus=portalStatuses[client.id];const portalActive=portalStatus?.activated===true;const clientUnreadMessages=adminMessages.filter(item=>item.clientId===client.id&&item.sender==='client'&&!item.read&&!item.archivedAt).length;const clientNewRequests=adminRequests.filter(item=>item.clientId===client.id&&item.status==='pending'&&!item.readAt).length;const nextAppointment=data.appointments.filter(item=>item.clientId===client.id&&item.status==='zakazan'&&new Date(item.dateTime).getTime()>=Date.now()).sort((left,right)=>left.dateTime.localeCompare(right.dateTime))[0];return <article className="client-card clickable" role="button" tabIndex={0} key={client.id} onClick={()=>void openClientCard(client)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void openClientCard(client)}}}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.lastName}, {client.firstName}</h3><a href={`tel:${client.phone}`} onClick={event=>event.stopPropagation()}>{client.phone}</a>{(clientUnreadMessages>0||clientNewRequests>0)&&<div className="client-alerts">{clientUnreadMessages>0&&<span>{clientUnreadMessages} novih poruka</span>}{clientNewRequests>0&&<span>{clientNewRequests} novih zahtjeva</span>}</div>}<small className={portalActive?'portal-row-active':'portal-row-inactive'}>{portalActive?'Portal aktivan':'Portal nije aktiviran'}</small></div><div className="client-next-appointment"><small>Sljedeći termin</small>{nextAppointment?<><strong>{formatDateTime(nextAppointment.dateTime)}</strong><span>{nextAppointment.service}</span></>:<span>Nema budućeg termina</span>}</div></article> })}</div></section>}
       {view === 'cjenik' && <section className="panel price-panel"><div className="panel-head"><div><p className="eyebrow">USLUGE I CIJENE</p><h2>Cjenik</h2></div><button className="secondary compact-action" onClick={() => setCategoryForm({id:'',name:'',isActive:true,displayOrder:categoryCatalog.length+1})}>+ Kategorija</button></div><div className="admin-price-accordion">{orderedCategories(categoryCatalog).map(category=>{const open=openPriceCategoryId===category.id;const categoryServices=orderedServices(serviceCatalog.filter(item=>item.categoryId===category.id));return <article className={`admin-price-category ${open?'open':''}`} key={category.id}><div className="admin-category-row"><button className="category-toggle" type="button" aria-expanded={open} onClick={()=>setOpenPriceCategoryId(open?'':category.id)}><span className="category-chevron" aria-hidden="true">›</span><span><strong>{category.name}</strong><small>{categoryServices.length} {categoryServices.length===1?'stavka':'stavki'} · {category.isActive?'Aktivna':'Neaktivna'}</small></span></button><button className="link compact-edit" type="button" onClick={()=>setCategoryForm(category)}>Uredi</button></div>{open&&<div className="admin-category-items">{categoryServices.map(item=><div className="admin-price-row" key={item.id}><div><span>{item.name}</span><small>{item.durationMinutes?`${item.durationMinutes} min`:'Trajanje nije uneseno'} · {item.isActive?'Aktivna':'Neaktivna'} · {item.isBookable?'Za termin':'Dodatak'}</small></div><strong>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</strong><button className="link compact-edit" type="button" onClick={()=>setServiceForm(item)}>Uredi</button></div>)}<button className="link add-category-service" type="button" onClick={()=>setServiceForm({id:'',categoryId:category.id,categoryName:category.name,name:'',price:0,isActive:true,isBookable:true,displayOrder:categoryServices.length+1})}>+ Dodaj uslugu</button></div>}</article>})}</div></section>}
@@ -1287,7 +1252,29 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       {view === 'arhiva' && <section className="panel"><div className="panel-head"><div><p className="eyebrow">INSPIRACIJA I POVIJEST</p><h2>Arhiva frizura</h2></div><button className="primary" onClick={() => { setArchiveFiles([]); setArchiveOpen(true) }}>+ Dodaj tretman</button></div>{archiveProgress&&<p className="archive-progress" role="status">{archiveProgress}</p>}<div className="gallery">{supabase?treatmentArchives.map(entry => <article className="treatment-archive-card" key={entry.id}><div className="treatment-photo-grid">{entry.photos.map(photo=><figure key={photo.id}><a href={photo.imageUrl} target="_blank" rel="noreferrer"><img src={photo.thumbnailUrl||photo.imageUrl} alt={photo.phase==='before'?'Prije tretmana':'Poslije tretmana'} /></a><figcaption>{photo.phase==='before'?'Prije':'Poslije'}</figcaption><div className="archive-photo-actions"><label className="link">Zamijeni<input type="file" accept="image/*,.heic,.heif" onChange={event=>void replaceArchivePhoto(entry,photo.id,event.target.files?.[0])}/></label><button className="link danger-link" type="button" onClick={()=>void removeArchivePhoto(entry,photo.id)}>Obriši</button></div></figure>)}</div><div><small>{formatDate(entry.takenAt)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.notes}</p><button className="link" onClick={()=>void toggleArchiveVisibility(entry)}>{entry.visibleToClient?'Sakrij od klijenta':'Podijeli s klijentom'}</button></div></article>):data.hairstyles.map(entry => <article key={entry.id}><div className="photo-pair"><figure><img src={entry.before.thumb} alt="Prije" /><figcaption>Prije</figcaption></figure>{entry.after&&<figure><img src={entry.after.thumb} alt="Poslije" /><figcaption>Poslije</figcaption></figure>}</div><div><small>{formatDate(entry.date)}</small><h3>{findClientName(data.clients,entry.clientId)}</h3><p>{entry.note}</p></div></article>)}</div></section>}
       {view === 'postavke' && <section className="panel settings-panel"><div className="panel-head"><div><p className="eyebrow">SIGURNOST</p><h2>Postavke</h2></div></div><div className="settings-list"><div><div><strong>Administratorski PIN</strong><p>Postavite ili promijenite PIN koji štiti arhivu termina.</p></div><button className="secondary" type="button" onClick={()=>void openAdminPinSettings()}>{adminPinSet===false?'Postavi PIN':'Postavi ili promijeni PIN'}</button></div><div><div><strong>Arhiva termina</strong><p>Pregled prošlih termina zaštićen administratorskim PIN-om.</p></div><button className="secondary" type="button" onClick={()=>void openAppointmentArchive()}>Otvori arhivu</button></div></div></section>}
       {view === 'arhiva-termina' && appointmentArchiveUnlocked && <section className="panel appointment-archive"><div className="panel-head"><div><p className="eyebrow">ZAŠTIĆENI PREGLED</p><h2>Arhiva termina</h2></div><button className="secondary" type="button" onClick={()=>setView('postavke')}>Natrag</button></div><div className="table-wrap"><table><thead><tr><th>Datum i vrijeme</th><th>Klijent</th><th>Usluga</th><th>Status</th><th /></tr></thead><tbody>{pastAppointments.map(item=><tr key={item.id}><td>{formatDateTime(item.dateTime)}</td><td>{findClientName(data.clients,item.clientId)}</td><td>{item.service}</td><td><span className={`badge ${item.noCharge?'no-charge':item.status}`}>{item.noCharge?'Privatno / gratis – bez naplate':appointmentStatusLabel(item.status)}</span></td><td><button className="link" type="button" onClick={()=>setAppointmentForm(item)}>Uredi</button></td></tr>)}</tbody></table>{pastAppointments.length===0&&<p className="empty-state">Nema evidentiranih prošlih termina.</p>}</div></section>}
-      {view === 'zahtjevi-live' && <AdminRequestInbox requests={activeAdminRequests} selected={selectedAdminRequest} busy={inboxBusy} duration={requestDraftDuration} onDurationChange={setRequestDurationOverride} onOpen={openAdminRequest} onAccept={acceptAdminRequest} onRespond={respondToAdminRequest} onDelete={deleteAdminRequest} onClose={()=>setSelectedAdminRequest(undefined)}/>}
+      {view === 'zahtjevi-live' && <AdminRequestInbox
+        requests={activeAdminRequests}
+        selected={selectedAdminRequest}
+        busy={inboxBusy}
+        duration={requestDraftDuration}
+        onDurationChange={setRequestDurationOverride}
+        services={serviceCatalog}
+        categories={categoryCatalog}
+        onAddTreatment={service => setSelectedAdminRequest(current => current
+          ? { ...current, treatments: addRequestTreatment(current.treatments, service) }
+          : current)}
+        onRemoveTreatment={serviceId => setSelectedAdminRequest(current => current
+          ? { ...current, treatments: removeRequestTreatment(current.treatments, serviceId) }
+          : current)}
+        onTreatmentDurationChange={(serviceId, duration) => setSelectedAdminRequest(current => current
+          ? { ...current, treatments: updateRequestTreatmentDuration(current.treatments, serviceId, duration) }
+          : current)}
+        onOpen={openAdminRequest}
+        onAccept={acceptAdminRequest}
+        onRespond={respondToAdminRequest}
+        onDelete={deleteAdminRequest}
+        onClose={()=>setSelectedAdminRequest(undefined)}
+      />}
       {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
     <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}

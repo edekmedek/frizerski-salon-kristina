@@ -9,10 +9,10 @@ describe('administratorska navigacija', () => {
     expect(source).not.toContain("view === 'termini'")
   })
 
-  it('nakon otvaranja zahtjeva prikazuje kalendar prvog traženog dana', () => {
+  it('nakon uređivanja zahtjeva prikazuje kalendar prvog traženog dana', () => {
     const source = readFileSync(join(process.cwd(), 'src', 'AdminApp.tsx'), 'utf8')
-    expect(source).toContain('const requestedDate = request.preferredDates[0]')
-    expect(source).toContain('await requestCalendarDate(requestedDate)')
+    expect(source).toContain("const date = request.preferredDates[0] || localDateString(new Date())")
+    expect(source).toContain('void requestCalendarDate(date)')
     expect(source).toContain("setView('pregled')")
     expect(source).toContain('requestNeedsScrollRef.current = true')
     expect(source).toContain("scrollIntoView({ block: 'center'")
