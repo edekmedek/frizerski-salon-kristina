@@ -1107,6 +1107,31 @@
   grid-template-columns: repeat(8, 1fr) !important;
 }
 
+.video-doorbell-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 100px;
+  z-index: 99999;
+  min-width: 180px;
+  min-height: 60px;
+  padding: 11px 17px;
+  border: 4px solid black;
+  border-radius: 999px;
+  background: red;
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 9px 24px #6c3d2d38;
+}
+
+.video-doorbell-fab:hover {
+  background: #a65f44;
+}
+
+.video-doorbell-fab:focus-visible {
+  outline: 3px solid #dba98f;
+  outline-offset: 3px;
+}
+
 .settings-panel {
   width: min(640px, 100%);
 }

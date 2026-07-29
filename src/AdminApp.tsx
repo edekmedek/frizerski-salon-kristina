@@ -33,6 +33,7 @@ import { parseClientPushResult, savedMessagePushNotice, type ClientPushOutcome }
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import { doorbellService } from './lib/doorbellService'
+import { openTapoAndroidApp, TAPO_PWA_FALLBACK } from './lib/tapoApp'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -234,6 +235,9 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }, [appointmentForm])
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) setNotice(message) }
   function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
+  function openVideoDoorbell() {
+    openTapoAndroidApp({ onUnavailable: () => setNotice(TAPO_PWA_FALLBACK) })
+  }
   const filteredClients = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('hr')
     return data.clients
@@ -1366,6 +1370,18 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       )
     : []
   return <div className="app-shell">
+    <div style={{
+      position: 'fixed',
+      top: 20,
+      left: 20,
+      zIndex: 999999,
+      background: 'red',
+      color: 'white',
+      padding: 20,
+      fontSize: 32,
+    }}>
+      TEST ADMIN APP
+    </div>
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
@@ -1407,6 +1423,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       />}
       {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
+    <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell} aria-label="Otvori Tapo videozvono">TEST VIDEOZVONO</button>
     <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}
     {movingAppointment&&<MovingAppointment appointment={movingAppointment} selectedDate={selectedCalendarDate} onChange={setMovingAppointment} onDateChange={setSelectedCalendarDate} onEdit={()=>{setAppointmentPlaced(true);setAppointmentForm(movingAppointment);setMovingAppointment(null)}} onCancel={()=>setMovingAppointment(null)}/>}
     {rescheduleDraft&&<><div className="reschedule-unlocked-banner" role="status"><strong>Termin je spreman za pomicanje</strong><span>Povucite blok prstom ili mišem. Vrijeme se poravnava na 15 minuta.</span>{rescheduleConflicts.length>0&&<em>Preview se preklapa s {rescheduleConflicts.length} {rescheduleConflicts.length===1?'terminom':'termina'}.</em>}<div><button type="button" className="secondary" onClick={()=>void requestCalendarDate(calendarDateAfterMove(selectedCalendarDate,-1))}>Prethodni dan</button><button type="button" className="secondary" onClick={()=>void requestCalendarDate(calendarDateAfterMove(selectedCalendarDate,1))}>Sljedeći dan</button><button type="button" className="link" onClick={()=>{const original=data.appointments.find(item=>item.id===rescheduleDraft.id);if(original)setSelectedCalendarDate(original.dateTime.slice(0,10));setRescheduleDraft(null)}}>Odustani</button></div></div><MovingAppointment appointment={rescheduleDraft} selectedDate={selectedCalendarDate} onChange={setRescheduleDraft} onDateChange={date=>{setSelectedCalendarDate(date);setRescheduleDraft(current=>current?{...current,dateTime:`${date}T${current.dateTime.slice(11,16)}`}:current)}} onEdit={()=>void saveRescheduledAppointment(rescheduleDraft)} onDrop={appointment=>void saveRescheduledAppointment(appointment)} onCancel={()=>{const original=data.appointments.find(item=>item.id===rescheduleDraft.id);if(original)setSelectedCalendarDate(original.dateTime.slice(0,10));setRescheduleDraft(null)}}/></>}
