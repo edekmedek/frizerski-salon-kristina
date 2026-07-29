@@ -33,7 +33,7 @@ import { parseClientPushResult, savedMessagePushNotice, type ClientPushOutcome }
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import { doorbellService } from './lib/doorbellService'
-import { openTapoAndroidApp, TAPO_PWA_FALLBACK } from './lib/tapoApp'
+import { TAPO_PWA_FALLBACK } from './lib/tapoApp'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -236,7 +236,15 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) setNotice(message) }
   function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
   function openVideoDoorbell() {
-    openTapoAndroidApp({ onUnavailable: () => setNotice(TAPO_PWA_FALLBACK) })
+    if (!/Android/i.test(navigator.userAgent)) {
+      setNotice(TAPO_PWA_FALLBACK)
+      return
+    }
+    try {
+      window.location.href = 'intent://#Intent;package=com.tplink.iot;end'
+    } catch {
+      setNotice(TAPO_PWA_FALLBACK)
+    }
   }
   const filteredClients = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('hr')
