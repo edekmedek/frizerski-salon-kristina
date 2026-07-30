@@ -25,7 +25,7 @@ public final class CompanionConfig {
     public static final int VIDEO_SURFACE_BOTTOM = 1325;
     public static final int DOUBLE_TAP_X = 600;
     public static final int DOUBLE_TAP_Y = 663;
-    public static final long DOUBLE_TAP_AFTER_LIVE_DELAY_MS = 8_000L;
+    public static final long DOUBLE_TAP_AFTER_LIVE_DELAY_MS = 6_000L;
     public static final long TAP_DURATION_MS = 50L;
     public static final long DOUBLE_TAP_GAP_MS = 150L;
 

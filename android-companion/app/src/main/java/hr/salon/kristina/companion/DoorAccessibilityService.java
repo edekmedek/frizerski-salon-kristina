@@ -21,7 +21,6 @@ import android.util.DisplayMetrics;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.Toast;
 
 import java.util.ArrayDeque;
 import java.util.List;
@@ -127,6 +126,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         startNotificationWatchdog(this);
         long autoReturnDurationMs = AutoReturnPreferences.load(this);
         if (autoReturnDurationMs == AutoReturnPreferences.NEVER) {
+            cancelAutoReturn();
             AutomationLog.step("Auto-return disabled");
         } else {
             scheduleAutoReturn(autoReturnDurationMs);
@@ -443,7 +443,6 @@ public final class DoorAccessibilityService extends AccessibilityService {
                         + " class=" + lastWindowClass
                         + " elapsedMs=" + elapsedSinceAutomationStart()
                         + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
-        Toast.makeText(this, "Live prikaz je otvoren.", Toast.LENGTH_SHORT).show();
         scheduleDoubleTap();
     }
 
@@ -516,7 +515,6 @@ public final class DoorAccessibilityService extends AccessibilityService {
         if (isReturnActive(this)) {
             ensureReturnNotification(this);
         }
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         Intent errorIntent = new Intent(this, DoorCommandActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .setData(new Uri.Builder()
@@ -590,6 +588,14 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     public static void requestAutoReturn(Context context) {
+        if (AutoReturnPreferences.load(context) == AutoReturnPreferences.NEVER) {
+            cancelAutoReturn(context);
+            if (isReturnActive(context)) {
+                ensureReturnNotification(context);
+            }
+            AutomationLog.step("Stale auto-return ignored", "duration=0");
+            return;
+        }
         executeReturn(false, context);
     }
 

@@ -1122,6 +1122,20 @@
   box-shadow: 0 9px 24px #6c3d2d38;
 }
 
+.app-shell > main {
+  padding-bottom: calc(140px + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 700px) {
+  .video-doorbell-fab {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+
+  .app-shell > main {
+    padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+}
+
 .video-doorbell-fab:hover {
   background: #a65f44;
 }
