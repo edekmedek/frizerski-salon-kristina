@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.service.notification.StatusBarNotification;
 import android.util.DisplayMetrics;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
@@ -37,6 +38,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private static volatile DoorAccessibilityService connectedInstance;
     private static final Handler returnHandler = new Handler(Looper.getMainLooper());
     private static Runnable autoReturnRunnable;
+    private static Runnable notificationWatchdogRunnable;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Phase phase = Phase.IDLE;
@@ -46,6 +48,8 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private boolean doubleTapDispatched;
     private boolean existingLiveDismissed;
     private String lastWindowClass = "";
+    private long automationStartedAtMs;
+    private long tapoLaunchedAtMs;
 
     private final Runnable automationRunnable = new Runnable() {
         @Override
@@ -69,6 +73,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
     protected void onServiceConnected() {
         connectedInstance = this;
         AutomationLog.step("Accessibility service connected");
+        if (isReturnActive(this)) {
+            ensureReturnNotification(this);
+            startNotificationWatchdog(this);
+        }
     }
 
     @Override
@@ -106,6 +114,8 @@ public final class DoorAccessibilityService extends AccessibilityService {
     public void openLiveView() {
         cancelPendingWork();
         AutomationLog.begin();
+        automationStartedAtMs = SystemClock.elapsedRealtime();
+        tapoLaunchedAtMs = 0L;
         commandActive = true;
         deviceClicked = false;
         doubleTapDispatched = false;
@@ -114,6 +124,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         phase = Phase.WAITING_FOR_DEVICE;
         setReturnActive(true);
         showReturnNotification();
+        startNotificationWatchdog(this);
         long autoReturnDurationMs = AutoReturnPreferences.load(this);
         if (autoReturnDurationMs == AutoReturnPreferences.NEVER) {
             AutomationLog.step("Auto-return disabled");
@@ -149,9 +160,11 @@ public final class DoorAccessibilityService extends AccessibilityService {
         AutomationLog.step(
                 "Tapo launch method",
                 "PackageManager front-door component="
-                        + launchIntent.getComponent().flattenToShortString());
+                        + launchIntent.getComponent().flattenToShortString()
+                        + " elapsedMs=" + elapsedSinceAutomationStart());
         try {
             startActivity(launchIntent);
+            tapoLaunchedAtMs = SystemClock.elapsedRealtime();
         } catch (RuntimeException error) {
             AutomationLog.error("Launching Tapo", "startActivity failed", error);
             fail("Tapo application could not be launched");
@@ -190,7 +203,13 @@ public final class DoorAccessibilityService extends AccessibilityService {
         if (device != null) {
             AutomationLog.step(
                     "Device text found",
-                    "text=" + readableNodeText(device));
+                    "text=" + readableNodeText(device)
+                            + " elapsedMs=" + elapsedSinceAutomationStart()
+                            + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
+            AutomationLog.step(
+                    "Tapo Home ready",
+                    "elapsedMs=" + elapsedSinceAutomationStart()
+                            + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
             if (clickNodeOrParent(device)) {
                 deviceClicked = true;
                 beginWaitingForLive("accessibility-action");
@@ -420,7 +439,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
         handler.removeCallbacks(automationRunnable);
         AutomationLog.step(
                 "Live activity confirmed",
-                "source=" + source + " class=" + lastWindowClass);
+                "source=" + source
+                        + " class=" + lastWindowClass
+                        + " elapsedMs=" + elapsedSinceAutomationStart()
+                        + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
         Toast.makeText(this, "Live prikaz je otvoren.", Toast.LENGTH_SHORT).show();
         scheduleDoubleTap();
     }
@@ -461,7 +483,9 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 "Double-tap dispatched",
                 "x=" + CompanionConfig.DOUBLE_TAP_X
                         + " y=" + CompanionConfig.DOUBLE_TAP_Y
-                        + " gapMs=" + CompanionConfig.DOUBLE_TAP_GAP_MS);
+                        + " gapMs=" + CompanionConfig.DOUBLE_TAP_GAP_MS
+                        + " elapsedMs=" + elapsedSinceAutomationStart()
+                        + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
         boolean accepted = dispatchGesture(
                 gesture,
                 new GestureResultCallback() {
@@ -489,9 +513,9 @@ public final class DoorAccessibilityService extends AccessibilityService {
         commandActive = false;
         phase = Phase.IDLE;
         handler.removeCallbacks(automationRunnable);
-        cancelAutoReturn();
-        setReturnActive(false);
-        cancelNotification();
+        if (isReturnActive(this)) {
+            ensureReturnNotification(this);
+        }
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         Intent errorIntent = new Intent(this, DoorCommandActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -507,6 +531,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private void cancelPendingWork() {
         cancelLocalAutomation();
         cancelAutoReturn();
+        stopNotificationWatchdog();
         setReturnActive(false);
         cancelNotification();
     }
@@ -518,19 +543,24 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private void showReturnNotification() {
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        showReturnNotification(this, true);
+    }
+
+    private static void showReturnNotification(Context context, boolean log) {
+        NotificationManager manager =
+                (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
         manager.createNotificationChannel(new NotificationChannel(
                 CompanionConfig.NOTIFICATION_CHANNEL_ID,
-                getString(R.string.notification_channel_name),
+                context.getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_HIGH));
-        Intent returnIntent = new Intent(this, ReturnToSalonActivity.class);
+        Intent returnIntent = new Intent(context, ReturnToSalonActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(
-                this,
+                context,
                 0,
                 returnIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(
-                this, CompanionConfig.NOTIFICATION_CHANNEL_ID)
+                context, CompanionConfig.NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("Salon Kristina")
                 .setContentText("Natrag u salon")
@@ -545,7 +575,9 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 .setOnlyAlertOnce(true)
                 .build();
         manager.notify(CompanionConfig.NOTIFICATION_ID, notification);
-        AutomationLog.step("Return notification shown");
+        if (log) {
+            AutomationLog.step("Return notification shown");
+        }
     }
 
     private void cancelNotification() {
@@ -570,6 +602,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         }
         setReturnActive(context, false);
         cancelAutoReturn(context);
+        stopNotificationWatchdog();
         if (manual) {
             AutomationLog.step("Manual return requested");
             AutomationLog.step("Auto-return cancelled");
@@ -586,6 +619,52 @@ public final class DoorAccessibilityService extends AccessibilityService {
         AutomationLog.step("Return notification removed");
         AutomationLog.step("Automation state cleared");
         launchSalon(context);
+    }
+
+    private static void startNotificationWatchdog(Context context) {
+        Context applicationContext = context.getApplicationContext();
+        stopNotificationWatchdog();
+        notificationWatchdogRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!isReturnActive(applicationContext)) {
+                    notificationWatchdogRunnable = null;
+                    return;
+                }
+                ensureReturnNotification(applicationContext);
+                returnHandler.postDelayed(
+                        this,
+                        CompanionConfig.NOTIFICATION_WATCHDOG_INTERVAL_MS);
+            }
+        };
+        returnHandler.postDelayed(
+                notificationWatchdogRunnable,
+                CompanionConfig.NOTIFICATION_WATCHDOG_INTERVAL_MS);
+    }
+
+    private static void stopNotificationWatchdog() {
+        if (notificationWatchdogRunnable != null) {
+            returnHandler.removeCallbacks(notificationWatchdogRunnable);
+            notificationWatchdogRunnable = null;
+        }
+    }
+
+    private static void ensureReturnNotification(Context context) {
+        if (!isReturnNotificationActive(context)) {
+            showReturnNotification(context, false);
+            AutomationLog.step("Return notification restored");
+        }
+    }
+
+    private static boolean isReturnNotificationActive(Context context) {
+        NotificationManager manager =
+                (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
+        for (StatusBarNotification notification : manager.getActiveNotifications()) {
+            if (notification.getId() == CompanionConfig.NOTIFICATION_ID) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void scheduleAutoReturn(long durationMs) {
@@ -648,6 +727,18 @@ public final class DoorAccessibilityService extends AccessibilityService {
         NotificationManager manager =
                 (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
         manager.cancel(CompanionConfig.NOTIFICATION_ID);
+    }
+
+    private long elapsedSinceAutomationStart() {
+        return automationStartedAtMs == 0L
+                ? -1L
+                : SystemClock.elapsedRealtime() - automationStartedAtMs;
+    }
+
+    private long elapsedSinceTapoLaunch() {
+        return tapoLaunchedAtMs == 0L
+                ? -1L
+                : SystemClock.elapsedRealtime() - tapoLaunchedAtMs;
     }
 
     private static void launchSalon(Context context) {

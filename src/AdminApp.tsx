@@ -1372,7 +1372,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       )
     : []
   return <div className="app-shell">
-    <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Zvono</button>
+    <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>

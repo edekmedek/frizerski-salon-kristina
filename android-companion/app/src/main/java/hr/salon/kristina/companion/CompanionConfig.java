@@ -11,9 +11,9 @@ public final class CompanionConfig {
     public static final int FALLBACK_SCREEN_WIDTH = 1200;
     public static final int FALLBACK_SCREEN_HEIGHT = 1920;
 
-    public static final long TAPO_STARTUP_WAIT_MS = 500L;
-    public static final long HOME_SETTLE_DELAY_MS = 500L;
-    public static final long SEARCH_INTERVAL_MS = 500L;
+    public static final long TAPO_STARTUP_WAIT_MS = 250L;
+    public static final long HOME_SETTLE_DELAY_MS = 250L;
+    public static final long SEARCH_INTERVAL_MS = 250L;
     public static final long DEVICE_SEARCH_TIMEOUT_MS = 10_000L;
     public static final long LIVE_CONFIRMATION_TIMEOUT_MS = 10_000L;
     public static final int MAX_CLICK_PARENT_DEPTH = 8;
@@ -44,6 +44,7 @@ public final class CompanionConfig {
 
     public static final String NOTIFICATION_CHANNEL_ID = "return_to_salon_v2";
     public static final int NOTIFICATION_ID = 235;
+    public static final long NOTIFICATION_WATCHDOG_INTERVAL_MS = 2_000L;
 
     private CompanionConfig() {
     }
