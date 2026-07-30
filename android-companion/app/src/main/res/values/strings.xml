@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Salon Kristina Companion</string>
+    <string name="accessibility_service_name">Salon Kristina – vrata</string>
+    <string name="accessibility_description">Otvara Tapo i pronalazi kameru Tapo D235 na zahtjev korisnika.</string>
+    <string name="notification_channel_name">Povratak u Salon Kristina</string>
+</resources>
+

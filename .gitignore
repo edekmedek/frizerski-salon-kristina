@@ -30,6 +30,8 @@ service-account*.json
 .DS_Store
 ~$*.xlsx
 supabase/.temp/
+.tmp-*
+.local-android-toolchain/
 *.suo
 *.ntvs*
 *.njsproj

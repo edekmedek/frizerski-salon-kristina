@@ -1,49 +1,37 @@
-export const TAPO_ANDROID_INTENT = 'intent://#Intent;package=com.tplink.iot;end'
-export const TAPO_PWA_FALLBACK = 'Otvori aplikaciju Tapo s početnog zaslona.'
+export const SALON_COMPANION_DOOR_LINK = 'salonkristina://door/live'
+export const COMPANION_UNAVAILABLE_MESSAGE = 'Companion aplikacija nije instalirana.'
 
-type TapoLaunchOptions = {
-  userAgent?: string
-  standalone?: boolean
+type CompanionLaunchOptions = {
   navigate?: (url: string) => void
   onUnavailable: () => void
   document?: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>
   setTimeout?: (callback: () => void, delay: number) => number
 }
 
-function isStandalonePwa() {
-  const iosNavigator = navigator as Navigator & { standalone?: boolean }
-  return iosNavigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches
-}
-
-export function openTapoAndroidApp({
-  userAgent = navigator.userAgent,
-  standalone = isStandalonePwa(),
+export function openSalonDoorCompanion({
   navigate = url => { window.location.href = url },
   onUnavailable,
   document: page = document,
   setTimeout: schedule = window.setTimeout.bind(window),
-}: TapoLaunchOptions) {
-  if (!/Android/i.test(userAgent) || standalone) {
-    onUnavailable()
-    return
+}: CompanionLaunchOptions) {
+  console.info('Door button pressed')
+  let companionOpened = false
+  const detectCompanionOpen = () => {
+    if (page.hidden) companionOpened = true
   }
-
-  let appOpened = false
-  const detectAppOpen = () => {
-    if (page.hidden) appOpened = true
-  }
-  page.addEventListener('visibilitychange', detectAppOpen)
+  page.addEventListener('visibilitychange', detectCompanionOpen)
 
   try {
-    navigate(TAPO_ANDROID_INTENT)
+    navigate(SALON_COMPANION_DOOR_LINK)
+    console.info('Deep link launched')
   } catch {
-    page.removeEventListener('visibilitychange', detectAppOpen)
+    page.removeEventListener('visibilitychange', detectCompanionOpen)
     onUnavailable()
     return
   }
 
   schedule(() => {
-    page.removeEventListener('visibilitychange', detectAppOpen)
-    if (!appOpened) onUnavailable()
+    page.removeEventListener('visibilitychange', detectCompanionOpen)
+    if (!companionOpened) onUnavailable()
   }, 1500)
 }

@@ -1,33 +1,46 @@
 import { describe, expect, it, vi } from 'vitest'
-import { openTapoAndroidApp, TAPO_ANDROID_INTENT } from './tapoApp'
+import {
+  openSalonDoorCompanion,
+  SALON_COMPANION_DOOR_LINK,
+} from './tapoApp'
 
-describe('Tapo Android launcher', () => {
-  it('opens only the Tapo package through an Android intent', () => {
+describe('Salon Companion launcher', () => {
+  it('opens the Companion door deep link directly', () => {
     const navigate = vi.fn()
     const onUnavailable = vi.fn()
-    openTapoAndroidApp({
-      userAgent: 'Android',
-      standalone: false,
+    openSalonDoorCompanion({
       navigate,
       onUnavailable,
       document: { hidden: true, addEventListener: vi.fn(), removeEventListener: vi.fn() },
       setTimeout: vi.fn(),
     })
-    expect(navigate).toHaveBeenCalledWith(TAPO_ANDROID_INTENT)
-    expect(TAPO_ANDROID_INTENT).toBe('intent://#Intent;package=com.tplink.iot;end')
+    expect(navigate).toHaveBeenCalledWith(SALON_COMPANION_DOOR_LINK)
+    expect(SALON_COMPANION_DOOR_LINK).toBe('salonkristina://door/live')
+    expect(onUnavailable).not.toHaveBeenCalled()
   })
 
-  it('shows the fallback instead of navigating from an installed PWA', () => {
-    const navigate = vi.fn()
+  it('shows the fallback when the deep link does not leave the PWA', () => {
     const onUnavailable = vi.fn()
-    openTapoAndroidApp({ userAgent: 'Android', standalone: true, navigate, onUnavailable })
-    expect(navigate).not.toHaveBeenCalled()
+    let fallback: (() => void) | undefined
+    openSalonDoorCompanion({
+      navigate: vi.fn(),
+      onUnavailable,
+      document: { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      setTimeout: callback => {
+        fallback = callback
+        return 1
+      },
+    })
+    fallback?.()
     expect(onUnavailable).toHaveBeenCalledOnce()
   })
 
-  it('shows the fallback on non-Android devices', () => {
+  it('shows the fallback when navigation is rejected', () => {
     const onUnavailable = vi.fn()
-    openTapoAndroidApp({ userAgent: 'iPhone', standalone: false, onUnavailable })
+    openSalonDoorCompanion({
+      navigate: () => { throw new Error('unsupported scheme') },
+      onUnavailable,
+    })
     expect(onUnavailable).toHaveBeenCalledOnce()
   })
 })
