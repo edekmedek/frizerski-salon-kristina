@@ -220,31 +220,32 @@ textarea {
 
 @media (min-width: 550px) and (max-width: 700px) and (pointer: coarse) {
   main {
-    padding-bottom: calc(112px + env(safe-area-inset-bottom));
+    padding-bottom: calc(142px + env(safe-area-inset-bottom));
   }
 
   .mobile-nav {
-    min-height: calc(86px + env(safe-area-inset-bottom));
+    min-height: calc(112px + env(safe-area-inset-bottom));
     padding:
-      8px
-      max(8px, env(safe-area-inset-right))
-      max(8px, env(safe-area-inset-bottom))
-      max(8px, env(safe-area-inset-left));
+      10px
+      max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
   }
 
   .mobile-nav button {
-    min-width: 56px;
-    min-height: 68px;
-    gap: 4px;
-    font-size: 12px;
+    min-width: 64px;
+    min-height: 90px;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
   }
 
   .mobile-nav span {
-    font-size: 24px;
+    font-size: 32px;
   }
 
   .video-doorbell-fab {
-    bottom: calc(98px + env(safe-area-inset-bottom));
+    bottom: calc(124px + env(safe-area-inset-bottom));
   }
 }
 

@@ -12,6 +12,14 @@ export function isAndroidBrowser() {
   return /android/i.test(platform) || /android/i.test(navigator.userAgent)
 }
 
+export function isSupportedSalonTablet() {
+  if (!isAndroidBrowser() || navigator.maxTouchPoints < 1) return false
+  const shortestViewportSide = Math.min(window.innerWidth, window.innerHeight)
+  return shortestViewportSide >= 550
+    && shortestViewportSide <= 700
+    && window.matchMedia('(pointer: coarse)').matches
+}
+
 export function consumeCompanionStatus() {
   const url = new URL(window.location.href)
   const status = url.searchParams.get('companion_status')

@@ -52,7 +52,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private boolean commandActive;
     private boolean deviceClicked;
     private boolean doubleTapDispatched;
-    private boolean existingLiveDismissed;
+    private boolean liveZoomKnownActive;
     private String lastWindowClass = "";
     private long automationStartedAtMs;
     private long tapoLaunchedAtMs;
@@ -117,7 +117,8 @@ public final class DoorAccessibilityService extends AccessibilityService {
             if (phase == Phase.LIVE_CONFIRMED) {
                 if (isLiveViewClass(observedClass)) {
                     showReturnOverlay();
-                } else {
+                } else if (isActivityClass(observedClass)) {
+                    liveZoomKnownActive = false;
                     removeReturnOverlay("Tapo live activity left");
                 }
             }
@@ -191,8 +192,9 @@ public final class DoorAccessibilityService extends AccessibilityService {
         commandActive = true;
         deviceClicked = false;
         doubleTapDispatched = false;
-        existingLiveDismissed = false;
-        lastWindowClass = "";
+        boolean tapoForeground = isTapoForeground();
+        boolean liveAlreadyOpen = tapoForeground
+                && (isLiveViewClass(lastWindowClass) || isLiveUiVisible());
         phase = Phase.WAITING_FOR_DEVICE;
         setReturnActive(true);
         showReturnNotification();
@@ -205,6 +207,16 @@ public final class DoorAccessibilityService extends AccessibilityService {
             scheduleAutoReturn(autoReturnDurationMs);
         }
 
+        if (liveAlreadyOpen) {
+            AutomationLog.step(
+                    "Existing live accepted",
+                    "source=command-start zoomActive=" + isZoomActive());
+            adoptExistingLive("command-start");
+            return;
+        }
+
+        liveZoomKnownActive = false;
+        lastWindowClass = "";
         if (performGlobalAction(GLOBAL_ACTION_HOME)) {
             AutomationLog.step("Home sent");
         } else {
@@ -255,20 +267,12 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private void searchAndOpenDevice() {
-        if (!existingLiveDismissed
+        if (isTapoForeground()
                 && (isLiveViewClass(lastWindowClass) || isLiveUiVisible())) {
-            existingLiveDismissed = true;
             AutomationLog.step(
-                    "Existing live detected",
-                    "sending Back to establish Tapo Home");
-            boolean backSent = performGlobalAction(GLOBAL_ACTION_BACK);
-            AutomationLog.step("Back to Tapo Home result", "success=" + backSent);
-            if (!backSent) {
-                fail("Existing live view could not be closed");
-                return;
-            }
-            lastWindowClass = "";
-            handler.postDelayed(automationRunnable, CompanionConfig.SEARCH_INTERVAL_MS);
+                    "Existing live accepted",
+                    "source=post-launch zoomActive=" + isZoomActive());
+            adoptExistingLive("post-launch");
             return;
         }
         AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -557,6 +561,61 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 && hasAnyText(root, "Manual Recording", "Snapshot", "Snimka", "Record", "Snimi");
     }
 
+    private boolean isTapoForeground() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        return root != null
+                && root.getPackageName() != null
+                && CompanionConfig.TAPO_PACKAGE.contentEquals(root.getPackageName());
+    }
+
+    private boolean isZoomActive() {
+        if (liveZoomKnownActive) {
+            return true;
+        }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null
+                || root.getPackageName() == null
+                || !CompanionConfig.TAPO_PACKAGE.contentEquals(root.getPackageName())) {
+            return false;
+        }
+        List<AccessibilityNodeInfo> scaleNodes = root.findAccessibilityNodeInfosByViewId(
+                CompanionConfig.TAPO_PACKAGE + ":id/tv_scale_value_1");
+        for (AccessibilityNodeInfo node : scaleNodes) {
+            if (isZoomValue(node.getText()) || isZoomValue(node.getContentDescription())) {
+                liveZoomKnownActive = true;
+                return true;
+            }
+        }
+        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.removeFirst();
+            if (isZoomValue(node.getText()) || isZoomValue(node.getContentDescription())) {
+                liveZoomKnownActive = true;
+                return true;
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    queue.addLast(child);
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isZoomValue(CharSequence value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.toString()
+                .trim()
+                .toLowerCase(Locale.ROOT)
+                .replace(',', '.')
+                .replace('×', 'x');
+        return normalized.startsWith("2.5x");
+    }
+
     private boolean hasAnyText(AccessibilityNodeInfo root, String... labels) {
         for (String label : labels) {
             if (!root.findAccessibilityNodeInfosByText(label).isEmpty()) {
@@ -570,6 +629,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
         return className.contains("TapoPadVideoPlayV3Activity");
     }
 
+    private boolean isActivityClass(String className) {
+        return className.endsWith("Activity");
+    }
+
     private void confirmLiveView(String source) {
         if (!commandActive
                 || phase != Phase.WAITING_FOR_LIVE
@@ -581,16 +644,43 @@ public final class DoorAccessibilityService extends AccessibilityService {
                             + " deviceClicked=" + deviceClicked);
             return;
         }
-        phase = Phase.LIVE_CONFIRMED;
-        handler.removeCallbacks(automationRunnable);
         AutomationLog.step(
                 "Live activity confirmed",
                 "source=" + source
                         + " class=" + lastWindowClass
                         + " elapsedMs=" + elapsedSinceAutomationStart()
                         + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
-        showReturnOverlay();
+        completeLiveEntry(source);
         scheduleDoubleTap();
+    }
+
+    private void adoptExistingLive(String source) {
+        deviceClicked = true;
+        completeLiveEntry(source);
+        if (isZoomActive()) {
+            doubleTapDispatched = true;
+            commandActive = false;
+            AutomationLog.step(
+                    "Existing live already zoomed",
+                    "source=" + source
+                            + " elapsedMs=" + elapsedSinceAutomationStart());
+            return;
+        }
+        AutomationLog.step(
+                "Existing live awaiting zoom stabilization",
+                "source=" + source
+                        + " delayMs=" + CompanionConfig.DOUBLE_TAP_AFTER_LIVE_DELAY_MS);
+        scheduleDoubleTap();
+    }
+
+    private void completeLiveEntry(String source) {
+        phase = Phase.LIVE_CONFIRMED;
+        handler.removeCallbacks(automationRunnable);
+        showReturnOverlay();
+        AutomationLog.step(
+                "Live entry completed",
+                "source=" + source
+                        + " overlayVisible=" + (returnOverlay != null));
     }
 
     private void restoreOverlayIfLive() {
@@ -704,6 +794,15 @@ public final class DoorAccessibilityService extends AccessibilityService {
                             + " alreadyDispatched=" + doubleTapDispatched);
             return;
         }
+        if (isZoomActive()) {
+            doubleTapDispatched = true;
+            commandActive = false;
+            AutomationLog.step(
+                    "Double-tap skipped",
+                    "zoom already active before gesture elapsedMs="
+                            + elapsedSinceAutomationStart());
+            return;
+        }
         doubleTapDispatched = true;
         Path firstTap = new Path();
         firstTap.moveTo(CompanionConfig.DOUBLE_TAP_X, CompanionConfig.DOUBLE_TAP_Y);
@@ -729,6 +828,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 new GestureResultCallback() {
                     @Override
                     public void onCompleted(GestureDescription gestureDescription) {
+                        liveZoomKnownActive = true;
                         AutomationLog.step("Double-tap gesture result", "completed");
                     }
 

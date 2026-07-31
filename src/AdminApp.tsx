@@ -33,7 +33,7 @@ import { parseClientPushResult, savedMessagePushNotice, type ClientPushOutcome }
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import { doorbellService } from './lib/doorbellService'
-import { COMPANION_UNAVAILABLE_MESSAGE, consumeCompanionStatus, hasRecentCompanionStatus, isAndroidBrowser, openSalonDoorCompanion, requestCompanionStatus } from './lib/tapoApp'
+import { COMPANION_UNAVAILABLE_MESSAGE, isSupportedSalonTablet, openSalonDoorCompanion } from './lib/tapoApp'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -111,18 +111,6 @@ function emptyAppointment(appointments:Appointment[]):Appointment{
 
 function AdminApp({ onLogout }: { onLogout: () => void }) {
   const initialAdminPinFields = createEmptyAdminPinFields()
-  const [companionAvailable] = useState(() => {
-    if (!isAndroidBrowser()) return false
-    return consumeCompanionStatus() ?? hasRecentCompanionStatus()
-  })
-  useEffect(() => {
-    if (!isAndroidBrowser() || companionAvailable) return
-    const probeKey = 'salon-companion-status-probe-at'
-    const lastProbeAt = Number(sessionStorage.getItem(probeKey))
-    if (Number.isFinite(lastProbeAt) && Date.now() - lastProbeAt < 10_000) return
-    sessionStorage.setItem(probeKey, String(Date.now()))
-    requestCompanionStatus()
-  }, [companionAvailable])
   const [data, setData] = useState<SalonData>(() => loadSalonData())
   const [view, setView] = useState<View>(() => isTabletViewport() ? 'salon-dashboard' : 'pregled')
   const [query, setQuery] = useState('')
@@ -1384,7 +1372,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       )
     : []
   return <div className="app-shell">
-    {companionAvailable && <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>}
+    {isSupportedSalonTablet() && <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
