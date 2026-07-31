@@ -42,14 +42,16 @@ public final class CompanionConfig {
     public static final String PATH_STATUS = "/status";
     public static final String PATH_ERROR = "/error";
 
-    public static final String NOTIFICATION_CHANNEL_ID = "return_to_salon_v2";
+    public static final String NOTIFICATION_CHANNEL_ID = "return_to_salon_v3_quiet";
     public static final int NOTIFICATION_ID = 235;
     public static final long NOTIFICATION_WATCHDOG_INTERVAL_MS = 2_000L;
     public static final int RETURN_OVERLAY_TOP_MARGIN_DP = 40;
     public static final int RETURN_OVERLAY_END_MARGIN_DP = 16;
-    public static final int RETURN_OVERLAY_HORIZONTAL_PADDING_DP = 14;
-    public static final int RETURN_OVERLAY_VERTICAL_PADDING_DP = 8;
-    public static final int RETURN_OVERLAY_CORNER_RADIUS_DP = 20;
+    public static final int RETURN_OVERLAY_HORIZONTAL_PADDING_DP = 17;
+    public static final int RETURN_OVERLAY_VERTICAL_PADDING_DP = 10;
+    public static final int RETURN_OVERLAY_CORNER_RADIUS_DP = 24;
+    public static final int RETURN_OVERLAY_MIN_HEIGHT_DP = 48;
+    public static final float RETURN_OVERLAY_TEXT_SIZE_SP = 17F;
 
     private CompanionConfig() {
     }

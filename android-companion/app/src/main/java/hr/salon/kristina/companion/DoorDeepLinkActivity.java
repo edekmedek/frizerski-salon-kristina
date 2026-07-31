@@ -21,6 +21,13 @@ public final class DoorDeepLinkActivity extends Activity {
         DoorCommand command = DoorCommand.from(getIntent() == null
                 ? null
                 : getIntent().getData());
+        if (command == DoorCommand.STATUS) {
+            boolean ready = isAccessibilityServiceEnabled()
+                    && DoorAccessibilityService.getConnectedInstance() != null;
+            AutomationLog.step("Companion status requested", "ready=" + ready);
+            DoorAccessibilityService.launchSalonWithCompanionStatus(this, ready);
+            return;
+        }
         if (command != DoorCommand.LIVE) {
             AutomationLog.step("Reserved deep link received", "command=" + command);
             returnToSalon("Command is not implemented: " + command);

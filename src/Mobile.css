@@ -218,6 +218,36 @@ textarea {
   }
 }
 
+@media (min-width: 550px) and (max-width: 700px) and (pointer: coarse) {
+  main {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-nav {
+    min-height: calc(86px + env(safe-area-inset-bottom));
+    padding:
+      8px
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+
+  .mobile-nav button {
+    min-width: 56px;
+    min-height: 68px;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .mobile-nav span {
+    font-size: 24px;
+  }
+
+  .video-doorbell-fab {
+    bottom: calc(98px + env(safe-area-inset-bottom));
+  }
+}
+
 @media (max-width: 950px) and (orientation: landscape) and (max-height: 500px) {
   .app-shell {
     display: block;

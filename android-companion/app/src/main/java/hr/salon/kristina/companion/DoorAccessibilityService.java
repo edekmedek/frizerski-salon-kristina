@@ -608,10 +608,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
         Button button = new Button(this);
         button.setText("← Salon");
         button.setTextColor(Color.WHITE);
-        button.setTextSize(14);
+        button.setTextSize(CompanionConfig.RETURN_OVERLAY_TEXT_SIZE_SP);
         button.setAllCaps(false);
         button.setMinWidth(0);
-        button.setMinHeight(0);
+        button.setMinHeight(dp(CompanionConfig.RETURN_OVERLAY_MIN_HEIGHT_DP));
         button.setGravity(Gravity.CENTER);
         button.setPadding(
                 dp(CompanionConfig.RETURN_OVERLAY_HORIZONTAL_PADDING_DP),
@@ -801,7 +801,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         manager.createNotificationChannel(new NotificationChannel(
                 CompanionConfig.NOTIFICATION_CHANNEL_ID,
                 context.getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_HIGH));
+                NotificationManager.IMPORTANCE_LOW));
         Intent returnIntent = new Intent(context, ReturnToSalonActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context,
@@ -814,7 +814,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 .setContentTitle("Salon Kristina")
                 .setContentText("Natrag u salon")
                 .setCategory(Notification.CATEGORY_SERVICE)
-                .setPriority(Notification.PRIORITY_HIGH)
+                .setPriority(Notification.PRIORITY_LOW)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(pendingIntent)
                 .addAction(new Notification.Action.Builder(
@@ -1071,5 +1071,25 @@ public final class DoorAccessibilityService extends AccessibilityService {
             }
         }
         return null;
+    }
+
+    public static void launchSalonWithCompanionStatus(Context context, boolean ready) {
+        Uri statusUri = Uri.parse(CompanionConfig.SALON_URL)
+                .buildUpon()
+                .appendQueryParameter("companion_status", ready ? "ready" : "unavailable")
+                .build();
+        Intent webApkIntent = findSalonWebApkIntent(context);
+        Intent intent = new Intent(Intent.ACTION_VIEW, statusUri)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (webApkIntent != null && webApkIntent.getPackage() != null) {
+            intent.setPackage(webApkIntent.getPackage());
+        }
+        try {
+            context.startActivity(intent);
+            AutomationLog.step("Companion status returned", "ready=" + ready);
+        } catch (RuntimeException error) {
+            AutomationLog.error("Companion status return failed", error.getMessage(), error);
+            launchSalon(context);
+        }
     }
 }
