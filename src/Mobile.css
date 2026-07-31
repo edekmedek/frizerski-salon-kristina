@@ -223,6 +223,103 @@ textarea {
     padding-bottom: calc(142px + env(safe-area-inset-bottom));
   }
 
+  .app-shell .client-grid {
+    gap: 6px;
+  }
+
+  .app-shell .client-card {
+    grid-template-columns: 44px minmax(0, 1.35fr) minmax(250px, 1.2fr);
+    gap: 10px;
+    min-height: 76px;
+    padding: 8px 12px;
+  }
+
+  .app-shell .client-card img,
+  .app-shell .client-card > .avatar {
+    width: 44px;
+    height: 44px;
+  }
+
+  .app-shell .client-card > div:not(.client-next-appointment) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 112px;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 10px;
+    min-width: 0;
+  }
+
+  .app-shell .client-card h3,
+  .app-shell .client-card a {
+    grid-column: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell .client-card h3 {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  .app-shell .client-card a {
+    font-size: 12px;
+  }
+
+  .app-shell .client-card .portal-row-active,
+  .app-shell .client-card .portal-row-inactive {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+    margin: 0;
+    line-height: 1.25;
+  }
+
+  .app-shell .client-alerts {
+    grid-column: 1;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell .client-next-appointment {
+    grid-column: auto;
+    display: grid;
+    grid-template-columns: minmax(125px, .9fr) minmax(105px, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    justify-items: start;
+    gap: 1px 10px;
+    min-width: 0;
+    padding-left: 0;
+    text-align: left;
+  }
+
+  .app-shell .client-next-appointment small,
+  .app-shell .client-next-appointment strong {
+    grid-column: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell .client-next-appointment > span {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell .client-next-appointment > small + span:last-child {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .app-shell .mobile-nav {
     min-height: calc(112px + env(safe-area-inset-bottom));
     gap: 4px;
