@@ -1,6 +1,7 @@
 package hr.salon.kristina.companion;
 
 import android.util.Log;
+import android.os.SystemClock;
 
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
@@ -39,6 +40,18 @@ public final class AutomationLog {
         }
     }
 
+    public static void audit(String step, String detail) {
+        currentStep = step;
+        Log.w(
+                TAG,
+                format(
+                        "AUDIT",
+                        step,
+                        "elapsedRealtimeMs=" + SystemClock.elapsedRealtime()
+                                + " " + detail),
+                new Throwable("Return lifecycle call stack"));
+    }
+
     public static String getCurrentStep() {
         return currentStep;
     }
@@ -53,4 +66,3 @@ public final class AutomationLog {
                 detail == null || detail.isEmpty() ? "" : " detail=\"" + detail + "\"");
     }
 }
-

@@ -9,8 +9,12 @@ import android.app.PendingIntent;
 import android.app.AlarmManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.content.pm.ResolveInfo;
+import android.graphics.Color;
 import android.graphics.Path;
+import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -18,9 +22,12 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
 import android.util.DisplayMetrics;
+import android.view.Gravity;
+import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.Button;
 
 import java.util.ArrayDeque;
 import java.util.List;
@@ -49,6 +56,9 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private String lastWindowClass = "";
     private long automationStartedAtMs;
     private long tapoLaunchedAtMs;
+    private long liveTimeoutAtMs;
+    private WindowManager overlayWindowManager;
+    private View returnOverlay;
 
     private final Runnable automationRunnable = new Runnable() {
         @Override
@@ -75,39 +85,101 @@ public final class DoorAccessibilityService extends AccessibilityService {
         if (isReturnActive(this)) {
             ensureReturnNotification(this);
             startNotificationWatchdog(this);
+            handler.postDelayed(this::restoreOverlayIfLive, 500L);
         }
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (!commandActive || event == null) {
+        if (event == null) {
             return;
         }
         CharSequence packageName = event.getPackageName();
-        if (packageName == null
-                || !CompanionConfig.TAPO_PACKAGE.contentEquals(packageName)
-                || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        if (packageName == null || !CompanionConfig.TAPO_PACKAGE.contentEquals(packageName)) {
             return;
         }
         CharSequence className = event.getClassName();
-        lastWindowClass = className == null ? "" : className.toString();
-        if (phase == Phase.WAITING_FOR_LIVE && isLiveViewClass(lastWindowClass)) {
+        String observedClass = className == null ? "" : className.toString();
+        AutomationLog.step(
+                "Tapo AccessibilityEvent",
+                "type=" + AccessibilityEvent.eventTypeToString(event.getEventType())
+                        + " class=" + observedClass
+                        + " commandActive=" + commandActive
+                        + " phase=" + phase
+                        + " deviceClicked=" + deviceClicked);
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            lastWindowClass = observedClass;
+            AutomationLog.step(
+                    "Foreground Activity observed",
+                    "class=" + lastWindowClass
+                            + " commandActive=" + commandActive
+                            + " phase=" + phase);
+            if (phase == Phase.LIVE_CONFIRMED) {
+                if (isLiveViewClass(observedClass)) {
+                    showReturnOverlay();
+                } else {
+                    removeReturnOverlay("Tapo live activity left");
+                }
+            }
+        }
+        if (!commandActive) {
+            if (isLiveViewClass(observedClass) && liveTimeoutAtMs > 0L) {
+                AutomationLog.error(
+                        "Late live activity observed",
+                        "class=" + observedClass
+                                + " afterTimeoutMs="
+                                + (SystemClock.elapsedRealtime() - liveTimeoutAtMs),
+                        null);
+            }
+            return;
+        }
+        if (phase == Phase.WAITING_FOR_LIVE && isLiveViewClass(observedClass)) {
             confirmLiveView("activity-event");
         }
     }
 
     @Override
     public void onInterrupt() {
-        fail("Accessibility service interrupted");
+        AutomationLog.error(
+                "Accessibility service interrupted",
+                "commandActive=" + commandActive + " phase=" + phase,
+                null);
+        if (commandActive) {
+            fail("Accessibility service interrupted");
+        } else if (isReturnActive(this)) {
+            ensureReturnNotification(this);
+            startNotificationWatchdog(this);
+        }
     }
 
     @Override
     public void onDestroy() {
+        AutomationLog.audit(
+                "Accessibility service destroyed",
+                "commandActive=" + commandActive
+                        + " phase=" + phase
+                        + " returnActive=" + isReturnActive(this)
+                        + " watchdogActive="
+                        + (notificationWatchdogRunnable != null));
         if (connectedInstance == this) {
             connectedInstance = null;
         }
+        removeReturnOverlay("Accessibility service destroyed");
         cancelLocalAutomation();
         super.onDestroy();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (returnOverlay != null) {
+            overlayWindowManager.updateViewLayout(
+                    returnOverlay,
+                    createOverlayLayoutParams());
+            AutomationLog.step(
+                    "Return overlay repositioned",
+                    "orientation=" + newConfig.orientation);
+        }
     }
 
     public void openLiveView() {
@@ -115,6 +187,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         AutomationLog.begin();
         automationStartedAtMs = SystemClock.elapsedRealtime();
         tapoLaunchedAtMs = 0L;
+        liveTimeoutAtMs = 0L;
         commandActive = true;
         deviceClicked = false;
         doubleTapDispatched = false;
@@ -246,16 +319,32 @@ public final class DoorAccessibilityService extends AccessibilityService {
             return;
         }
         if (SystemClock.uptimeMillis() >= phaseDeadlineMs) {
+            liveTimeoutAtMs = SystemClock.elapsedRealtime();
             AutomationLog.error(
                     "Timeout reason",
                     "live activity not confirmed within "
                             + CompanionConfig.LIVE_CONFIRMATION_TIMEOUT_MS
-                            + " ms; lastClass=" + lastWindowClass,
+                            + " ms; lastClass=" + lastWindowClass
+                            + " rootClass=" + activeRootClass()
+                            + " liveUiVisible=" + isLiveUiVisible(),
+                    null);
+            AutomationLog.error(
+                    "Companion giving up",
+                    "phase=" + phase
+                            + " deviceClicked=" + deviceClicked
+                            + " elapsedMs=" + elapsedSinceAutomationStart(),
                     null);
             fail("Tapo live activity was not confirmed");
             return;
         }
         handler.postDelayed(automationRunnable, CompanionConfig.SEARCH_INTERVAL_MS);
+    }
+
+    private String activeRootClass() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        return root == null || root.getClassName() == null
+                ? ""
+                : root.getClassName().toString();
     }
 
     private AccessibilityNodeInfo findDeviceNode(AccessibilityNodeInfo root) {
@@ -273,7 +362,14 @@ public final class DoorAccessibilityService extends AccessibilityService {
                         || name.equalsIgnoreCase(description)
                         || text.toLowerCase(Locale.ROOT)
                         .contains(name.toLowerCase(Locale.ROOT))) {
-                    return node;
+                    if (hasVisibleClickableParent(node)) {
+                        return node;
+                    }
+                    AutomationLog.step(
+                            "Device match ignored",
+                            "reason=off-screen-or-no-visible-clickable-parent"
+                                    + " text=" + readableNodeText(node)
+                                    + " bounds=" + nodeBounds(node));
                 }
             }
         }
@@ -286,7 +382,14 @@ public final class DoorAccessibilityService extends AccessibilityService {
                     ? "" : node.getContentDescription().toString();
             if (description.toLowerCase(Locale.ROOT).contains(
                     CompanionConfig.ALTERNATIVE_DEVICE_NAME.toLowerCase(Locale.ROOT))) {
-                return node;
+                if (hasVisibleClickableParent(node)) {
+                    return node;
+                }
+                AutomationLog.step(
+                        "Device match ignored",
+                        "reason=off-screen-or-no-visible-clickable-parent"
+                                + " text=" + readableNodeText(node)
+                                + " bounds=" + nodeBounds(node));
             }
             for (int i = 0; i < node.getChildCount(); i++) {
                 AccessibilityNodeInfo child = node.getChild(i);
@@ -298,6 +401,34 @@ public final class DoorAccessibilityService extends AccessibilityService {
         return null;
     }
 
+    private boolean hasVisibleClickableParent(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo candidate = node;
+        for (int depth = 0;
+             candidate != null && depth < CompanionConfig.MAX_CLICK_PARENT_DEPTH;
+             depth++) {
+            if (candidate.isClickable()) {
+                return candidate.isEnabled() && isFullyOnScreen(candidate);
+            }
+            candidate = candidate.getParent();
+        }
+        return false;
+    }
+
+    private boolean isFullyOnScreen(AccessibilityNodeInfo node) {
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        WindowManager windowManager =
+                (WindowManager) getSystemService(WINDOW_SERVICE);
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        return node.isVisibleToUser()
+                && !bounds.isEmpty()
+                && bounds.left >= 0
+                && bounds.top >= 0
+                && bounds.right <= metrics.widthPixels
+                && bounds.bottom <= metrics.heightPixels;
+    }
+
     private String readableNodeText(AccessibilityNodeInfo node) {
         if (node.getText() != null) {
             return node.getText().toString();
@@ -306,12 +437,27 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 ? "" : node.getContentDescription().toString();
     }
 
+    private String nodeBounds(AccessibilityNodeInfo node) {
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        return bounds.toShortString();
+    }
+
     private boolean clickNodeOrParent(AccessibilityNodeInfo node) {
         AccessibilityNodeInfo candidate = node;
         for (int depth = 0;
              candidate != null && depth < CompanionConfig.MAX_CLICK_PARENT_DEPTH;
              depth++) {
-            if (candidate.isClickable()) {
+            AutomationLog.step(
+                    "Click candidate inspected",
+                    "depth=" + depth
+                            + " class=" + candidate.getClassName()
+                            + " viewId=" + candidate.getViewIdResourceName()
+                            + " clickable=" + candidate.isClickable()
+                            + " enabled=" + candidate.isEnabled()
+                            + " bounds=" + nodeBounds(candidate));
+            if (candidate.isClickable() && candidate.isEnabled()
+                    && isFullyOnScreen(candidate)) {
                 AutomationLog.step(
                         "Clickable parent found",
                         "depth=" + depth
@@ -443,7 +589,100 @@ public final class DoorAccessibilityService extends AccessibilityService {
                         + " class=" + lastWindowClass
                         + " elapsedMs=" + elapsedSinceAutomationStart()
                         + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
+        showReturnOverlay();
         scheduleDoubleTap();
+    }
+
+    private void restoreOverlayIfLive() {
+        if (isReturnActive(this) && isLiveUiVisible()) {
+            showReturnOverlay();
+        }
+    }
+
+    private void showReturnOverlay() {
+        if (returnOverlay != null || !isReturnActive(this)) {
+            return;
+        }
+        overlayWindowManager =
+                (WindowManager) getSystemService(WINDOW_SERVICE);
+        Button button = new Button(this);
+        button.setText("← Salon");
+        button.setTextColor(Color.WHITE);
+        button.setTextSize(14);
+        button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(
+                dp(CompanionConfig.RETURN_OVERLAY_HORIZONTAL_PADDING_DP),
+                dp(CompanionConfig.RETURN_OVERLAY_VERTICAL_PADDING_DP),
+                dp(CompanionConfig.RETURN_OVERLAY_HORIZONTAL_PADDING_DP),
+                dp(CompanionConfig.RETURN_OVERLAY_VERTICAL_PADDING_DP));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.rgb(109, 76, 65));
+        background.setCornerRadius(
+                dp(CompanionConfig.RETURN_OVERLAY_CORNER_RADIUS_DP));
+        button.setBackground(background);
+        button.setElevation(dp(4));
+        button.setOnClickListener(view -> {
+            AutomationLog.step("Return overlay clicked");
+            requestManualReturn(this);
+        });
+        returnOverlay = button;
+        try {
+            overlayWindowManager.addView(
+                    returnOverlay,
+                    createOverlayLayoutParams());
+            AutomationLog.step("Return overlay shown");
+        } catch (RuntimeException error) {
+            returnOverlay = null;
+            AutomationLog.error(
+                    "Return overlay show failed",
+                    error.getMessage(),
+                    error);
+        }
+    }
+
+    private WindowManager.LayoutParams createOverlayLayoutParams() {
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        boolean landscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        params.gravity = landscape
+                ? Gravity.TOP | Gravity.CENTER_HORIZONTAL
+                : Gravity.TOP | Gravity.END;
+        params.x = landscape
+                ? 0
+                : dp(CompanionConfig.RETURN_OVERLAY_END_MARGIN_DP);
+        params.y = dp(CompanionConfig.RETURN_OVERLAY_TOP_MARGIN_DP);
+        return params;
+    }
+
+    private void removeReturnOverlay(String reason) {
+        if (returnOverlay == null) {
+            return;
+        }
+        try {
+            overlayWindowManager.removeViewImmediate(returnOverlay);
+            AutomationLog.step("Return overlay removed", "reason=" + reason);
+        } catch (RuntimeException error) {
+            AutomationLog.error(
+                    "Return overlay removal failed",
+                    "reason=" + reason,
+                    error);
+        } finally {
+            returnOverlay = null;
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void scheduleDoubleTap() {
@@ -509,21 +748,32 @@ public final class DoorAccessibilityService extends AccessibilityService {
 
     private void fail(String message) {
         AutomationLog.error("Automation failed", message, null);
+        boolean activeFailure = commandActive || isReturnActive(this);
         commandActive = false;
         phase = Phase.IDLE;
         handler.removeCallbacks(automationRunnable);
-        if (isReturnActive(this)) {
-            ensureReturnNotification(this);
+        if (!activeFailure) {
+            return;
         }
-        Intent errorIntent = new Intent(this, DoorCommandActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                .setData(new Uri.Builder()
-                        .scheme(CompanionConfig.DEEP_LINK_SCHEME)
-                        .authority(CompanionConfig.DEEP_LINK_HOST)
-                        .path(CompanionConfig.PATH_ERROR)
-                        .build())
-                .putExtra("message", message);
-        startActivity(errorIntent);
+        returnToSalonAfterCommandFailure(this, message);
+    }
+
+    public static synchronized void returnToSalonAfterCommandFailure(
+            Context context,
+            String reason) {
+        AutomationLog.error("Camera command failed", "reason=" + reason, null);
+        DoorAccessibilityService instance = connectedInstance;
+        if (instance != null) {
+            instance.cancelLocalAutomation();
+            instance.deviceClicked = false;
+            instance.doubleTapDispatched = false;
+        }
+        setReturnActive(context, false);
+        cancelAutoReturn(context);
+        stopNotificationWatchdog();
+        cancelNotification(context);
+        AutomationLog.step("Failure cleanup completed", "returningToSalon=true");
+        launchSalon(context);
     }
 
     private void cancelPendingWork() {
@@ -538,6 +788,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         commandActive = false;
         phase = Phase.IDLE;
         handler.removeCallbacksAndMessages(null);
+        removeReturnOverlay("Automation cancelled");
     }
 
     private void showReturnNotification() {
@@ -579,8 +830,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private void cancelNotification() {
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        manager.cancel(CompanionConfig.NOTIFICATION_ID);
+        cancelNotification(this);
     }
 
     public static void requestManualReturn(Context context) {
@@ -600,7 +850,11 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private static synchronized void executeReturn(boolean manual, Context context) {
-        if (!isReturnActive(context)) {
+        boolean activeBefore = isReturnActive(context);
+        AutomationLog.audit(
+                "Return requested",
+                "manual=" + manual + " sessionActive=" + activeBefore);
+        if (!activeBefore) {
             AutomationLog.step(
                     "Return request ignored",
                     "manual=" + manual + " active=false");
@@ -633,7 +887,14 @@ public final class DoorAccessibilityService extends AccessibilityService {
         notificationWatchdogRunnable = new Runnable() {
             @Override
             public void run() {
-                if (!isReturnActive(applicationContext)) {
+                boolean returnActive = isReturnActive(applicationContext);
+                boolean notificationActive =
+                        isReturnNotificationActive(applicationContext);
+                AutomationLog.step(
+                        "Notification watchdog heartbeat",
+                        "returnActive=" + returnActive
+                                + " notificationActive=" + notificationActive);
+                if (!returnActive) {
                     notificationWatchdogRunnable = null;
                     return;
                 }
@@ -649,6 +910,12 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private static void stopNotificationWatchdog() {
+        AutomationLog.audit(
+                "Notification watchdog cancellation requested",
+                "watchdogActive=" + (notificationWatchdogRunnable != null)
+                        + " sessionActive="
+                        + (connectedInstance != null
+                        && isReturnActive(connectedInstance)));
         if (notificationWatchdogRunnable != null) {
             returnHandler.removeCallbacks(notificationWatchdogRunnable);
             notificationWatchdogRunnable = null;
@@ -697,6 +964,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private static void cancelAutoReturn(Context context) {
+        AutomationLog.audit(
+                "Auto-return cancellation requested",
+                "timerActive=" + (autoReturnRunnable != null)
+                        + " sessionActive=" + isReturnActive(context));
         if (autoReturnRunnable != null) {
             returnHandler.removeCallbacks(autoReturnRunnable);
             autoReturnRunnable = null;
@@ -718,6 +989,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private static void setReturnActive(Context context, boolean active) {
+        boolean previous = isReturnActive(context);
+        AutomationLog.audit(
+                "Return session state changed",
+                "old=" + previous + " new=" + active);
         context.getSharedPreferences("door_return_state", MODE_PRIVATE)
                 .edit()
                 .putBoolean("active", active)
@@ -730,6 +1005,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private static void cancelNotification(Context context) {
+        AutomationLog.audit(
+                "Return notification cancellation requested",
+                "sessionActive=" + isReturnActive(context)
+                        + " notificationActive=" + isReturnNotificationActive(context));
         NotificationManager manager =
                 (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
         manager.cancel(CompanionConfig.NOTIFICATION_ID);
