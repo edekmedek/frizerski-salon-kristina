@@ -1107,19 +1107,37 @@
   grid-template-columns: repeat(8, 1fr) !important;
 }
 
-.video-doorbell-fab {
+.door-controls-fab {
   position: fixed;
   right: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.video-doorbell-fab,
+.door-open-placeholder {
   min-height: 46px;
   padding: 11px 17px;
-  border: 1px solid #9f5e47;
   border-radius: 999px;
-  background: var(--terracotta);
-  color: white;
   font-weight: 700;
   box-shadow: 0 9px 24px #6c3d2d38;
+}
+
+.video-doorbell-fab {
+  border: 1px solid #9f5e47;
+  background: var(--terracotta);
+  color: white;
+}
+
+.door-open-placeholder {
+  border: 1px solid #c8bdb5;
+  background: #e7e1dc;
+  color: #756b65;
+  box-shadow: 0 5px 14px #4b382c1f;
+  cursor: pointer;
 }
 
 .app-shell > main {
@@ -1127,7 +1145,7 @@
 }
 
 @media (max-width: 700px) {
-  .video-doorbell-fab {
+  .door-controls-fab {
     bottom: calc(76px + env(safe-area-inset-bottom));
   }
 
@@ -1142,6 +1160,11 @@
 
 .video-doorbell-fab:focus-visible {
   outline: 3px solid #dba98f;
+  outline-offset: 3px;
+}
+
+.door-open-placeholder:focus-visible {
+  outline: 3px solid #b9afa8;
   outline-offset: 3px;
 }
 

@@ -10,6 +10,7 @@ import android.app.AlarmManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Path;
@@ -27,7 +28,10 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import java.util.ArrayDeque;
 import java.util.List;
@@ -41,6 +45,13 @@ public final class DoorAccessibilityService extends AccessibilityService {
         LIVE_CONFIRMED
     }
 
+    private enum AutomationState {
+        IDLE,
+        OPENING,
+        LIVE,
+        RETURNING
+    }
+
     private static volatile DoorAccessibilityService connectedInstance;
     private static final Handler returnHandler = new Handler(Looper.getMainLooper());
     private static Runnable autoReturnRunnable;
@@ -48,6 +59,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Phase phase = Phase.IDLE;
+    private AutomationState automationState = AutomationState.IDLE;
     private long phaseDeadlineMs;
     private boolean commandActive;
     private boolean deviceClicked;
@@ -57,6 +69,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private long automationStartedAtMs;
     private long tapoLaunchedAtMs;
     private long liveTimeoutAtMs;
+    private boolean openingFromDoorbell;
     private WindowManager overlayWindowManager;
     private View returnOverlay;
 
@@ -83,6 +96,9 @@ public final class DoorAccessibilityService extends AccessibilityService {
         connectedInstance = this;
         AutomationLog.step("Accessibility service connected");
         if (isReturnActive(this)) {
+            automationState = isLiveUiVisible()
+                    ? AutomationState.LIVE
+                    : AutomationState.OPENING;
             ensureReturnNotification(this);
             startNotificationWatchdog(this);
             handler.postDelayed(this::restoreOverlayIfLive, 500L);
@@ -92,6 +108,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) {
+            return;
+        }
+        if (event.getEventType() == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            handleTapoNotification(event);
             return;
         }
         CharSequence packageName = event.getPackageName();
@@ -139,6 +159,85 @@ public final class DoorAccessibilityService extends AccessibilityService {
         }
     }
 
+    private void handleTapoNotification(AccessibilityEvent event) {
+        Object payload = event.getParcelableData();
+        if (!(payload instanceof Notification)) {
+            AutomationLog.step(
+                    "DOORBELL_IGNORED",
+                    "reason=notification-payload-missing state=" + automationState);
+            return;
+        }
+        Notification notification = (Notification) payload;
+        CharSequence eventPackage = event.getPackageName();
+        ApplicationInfo applicationInfo = notification.extras == null
+                ? null
+                : notification.extras.getParcelable("android.appInfo");
+        String notificationPackage = applicationInfo == null
+                ? null
+                : applicationInfo.packageName;
+        if (!CompanionConfig.TAPO_PACKAGE.equals(notificationPackage)) {
+            AutomationLog.step(
+                    "DOORBELL_IGNORED",
+                    "reason=package eventPackage=" + eventPackage
+                            + " notificationPackage=" + notificationPackage);
+            return;
+        }
+        String channelId = notification.getChannelId();
+        CharSequence title = notification.extras == null
+                ? null
+                : notification.extras.getCharSequence(Notification.EXTRA_TITLE);
+        CharSequence text = notification.extras == null
+                ? null
+                : notification.extras.getCharSequence(Notification.EXTRA_TEXT);
+        if (!CompanionConfig.TAPO_DOORBELL_CHANNEL_ID.equals(channelId)) {
+            AutomationLog.step(
+                    "DOORBELL_IGNORED",
+                    "reason=channel channelId=" + channelId
+                            + " title=" + title);
+            return;
+        }
+        AutomationLog.step(
+                "DOORBELL_NOTIFICATION",
+                "channelId=" + channelId
+                        + " title=" + title
+                        + " text=" + text
+                        + " state=" + automationState);
+        if (!CompanionConfig.ENABLE_DOORBELL_AUTOMATION) {
+            AutomationLog.step(
+                    "DOORBELL_IGNORED",
+                    "reason=automation-disabled-for-manual-comparison");
+            return;
+        }
+        if (automationState != AutomationState.IDLE) {
+            AutomationLog.step(
+                    "DOORBELL_IGNORED",
+                    "reason=automation-active state=" + automationState);
+            if (automationState == AutomationState.LIVE) {
+                showReturnOverlay();
+            }
+            return;
+        }
+        openLiveView("doorbell");
+    }
+
+    private AccessibilityNodeInfo findExactTextNode(
+            AccessibilityNodeInfo root,
+            String expectedText) {
+        if (root == null) {
+            return null;
+        }
+        for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(expectedText)) {
+            CharSequence text = node.getText();
+            CharSequence description = node.getContentDescription();
+            if ((text != null && expectedText.equalsIgnoreCase(text.toString().trim()))
+                    || (description != null
+                    && expectedText.equalsIgnoreCase(description.toString().trim()))) {
+                return node;
+            }
+        }
+        return null;
+    }
+
     @Override
     public void onInterrupt() {
         AutomationLog.error(
@@ -184,8 +283,18 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     public void openLiveView() {
+        openLiveView("button");
+    }
+
+    private void openLiveView(String source) {
         cancelPendingWork();
         AutomationLog.begin();
+        automationState = AutomationState.OPENING;
+        openingFromDoorbell = "doorbell".equals(source);
+        AutomationLog.step(
+                "doorbell".equals(source)
+                        ? "OPENING_FROM_DOORBELL"
+                        : "OPENING_FROM_BUTTON");
         automationStartedAtMs = SystemClock.elapsedRealtime();
         tapoLaunchedAtMs = 0L;
         liveTimeoutAtMs = 0L;
@@ -267,6 +376,20 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private void searchAndOpenDevice() {
+        if (openingFromDoorbell) {
+            AccessibilityNodeInfo ignoreNode = findExactTextNode(getTapoRoot(), "Ignore");
+            if (ignoreNode != null) {
+                boolean clicked = clickNodeOrParent(ignoreNode);
+                AutomationLog.step("Doorbell Ignore ACTION_CLICK", "success=" + clicked);
+                if (clicked) {
+                    openingFromDoorbell = false;
+                    handler.postDelayed(
+                            automationRunnable,
+                            CompanionConfig.DOORBELL_IGNORE_SETTLE_DELAY_MS);
+                    return;
+                }
+            }
+        }
         if (isTapoForeground()
                 && (isLiveViewClass(lastWindowClass) || isLiveUiVisible())) {
             AutomationLog.step(
@@ -275,7 +398,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
             adoptExistingLive("post-launch");
             return;
         }
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = getTapoRoot();
         AccessibilityNodeInfo device = root == null ? null : findDeviceNode(root);
         if (device != null) {
             AutomationLog.step(
@@ -551,7 +674,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private boolean isLiveUiVisible() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = getTapoRoot();
         if (root == null
                 || root.getPackageName() == null
                 || !CompanionConfig.TAPO_PACKAGE.contentEquals(root.getPackageName())) {
@@ -562,7 +685,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private boolean isTapoForeground() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = getTapoRoot();
         return root != null
                 && root.getPackageName() != null
                 && CompanionConfig.TAPO_PACKAGE.contentEquals(root.getPackageName());
@@ -572,7 +695,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         if (liveZoomKnownActive) {
             return true;
         }
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = getTapoRoot();
         if (root == null
                 || root.getPackageName() == null
                 || !CompanionConfig.TAPO_PACKAGE.contentEquals(root.getPackageName())) {
@@ -602,6 +725,28 @@ public final class DoorAccessibilityService extends AccessibilityService {
             }
         }
         return false;
+    }
+
+    private AccessibilityNodeInfo getTapoRoot() {
+        AccessibilityNodeInfo activeRoot = getRootInActiveWindow();
+        if (activeRoot != null
+                && activeRoot.getPackageName() != null
+                && CompanionConfig.TAPO_PACKAGE.contentEquals(activeRoot.getPackageName())) {
+            return activeRoot;
+        }
+        for (AccessibilityWindowInfo window : getWindows()) {
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root != null
+                    && root.getPackageName() != null
+                    && CompanionConfig.TAPO_PACKAGE.contentEquals(root.getPackageName())) {
+                AutomationLog.step(
+                        "Tapo window selected behind overlay",
+                        "activePackage="
+                                + (activeRoot == null ? null : activeRoot.getPackageName()));
+                return root;
+            }
+        }
+        return null;
     }
 
     private boolean isZoomValue(CharSequence value) {
@@ -655,6 +800,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     }
 
     private void adoptExistingLive(String source) {
+        AutomationLog.step("LIVE_ALREADY_OPEN", "source=" + source);
         deviceClicked = true;
         completeLiveEntry(source);
         if (isZoomActive()) {
@@ -675,8 +821,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
 
     private void completeLiveEntry(String source) {
         phase = Phase.LIVE_CONFIRMED;
+        automationState = AutomationState.LIVE;
         handler.removeCallbacks(automationRunnable);
         showReturnOverlay();
+        AutomationLog.step("LIVE_READY", "source=" + source);
         AutomationLog.step(
                 "Live entry completed",
                 "source=" + source
@@ -685,6 +833,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
 
     private void restoreOverlayIfLive() {
         if (isReturnActive(this) && isLiveUiVisible()) {
+            automationState = AutomationState.LIVE;
             showReturnOverlay();
         }
     }
@@ -695,8 +844,53 @@ public final class DoorAccessibilityService extends AccessibilityService {
         }
         overlayWindowManager =
                 (WindowManager) getSystemService(WINDOW_SERVICE);
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setGravity(Gravity.END);
+
+        Button returnButton = createOverlayButton("← Salon", Color.rgb(109, 76, 65));
+        returnButton.setOnClickListener(view -> {
+            AutomationLog.step("Return overlay clicked");
+            requestManualReturn(this);
+        });
+
+        Button openDoorButton = createOverlayButton(
+                "🔓 Otvori vrata",
+                Color.rgb(111, 103, 98));
+        openDoorButton.setAlpha(0.86F);
+        openDoorButton.setOnClickListener(view -> {
+            AutomationLog.step("Door open placeholder clicked");
+            Toast.makeText(
+                    this,
+                    "Brava još nije povezana.",
+                    Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams openDoorParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        openDoorParams.topMargin = dp(CompanionConfig.RETURN_OVERLAY_BUTTON_GAP_DP);
+
+        controls.addView(returnButton);
+        controls.addView(openDoorButton, openDoorParams);
+        returnOverlay = controls;
+        try {
+            overlayWindowManager.addView(
+                    returnOverlay,
+                    createOverlayLayoutParams());
+            AutomationLog.step("Return overlay shown");
+            AutomationLog.step("RETURN_OVERLAY_SHOWN");
+        } catch (RuntimeException error) {
+            returnOverlay = null;
+            AutomationLog.error(
+                    "Return overlay show failed",
+                    error.getMessage(),
+                    error);
+        }
+    }
+
+    private Button createOverlayButton(String text, int backgroundColor) {
         Button button = new Button(this);
-        button.setText("← Salon");
+        button.setText(text);
         button.setTextColor(Color.WHITE);
         button.setTextSize(CompanionConfig.RETURN_OVERLAY_TEXT_SIZE_SP);
         button.setAllCaps(false);
@@ -709,28 +903,12 @@ public final class DoorAccessibilityService extends AccessibilityService {
                 dp(CompanionConfig.RETURN_OVERLAY_HORIZONTAL_PADDING_DP),
                 dp(CompanionConfig.RETURN_OVERLAY_VERTICAL_PADDING_DP));
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.rgb(109, 76, 65));
+        background.setColor(backgroundColor);
         background.setCornerRadius(
                 dp(CompanionConfig.RETURN_OVERLAY_CORNER_RADIUS_DP));
         button.setBackground(background);
         button.setElevation(dp(4));
-        button.setOnClickListener(view -> {
-            AutomationLog.step("Return overlay clicked");
-            requestManualReturn(this);
-        });
-        returnOverlay = button;
-        try {
-            overlayWindowManager.addView(
-                    returnOverlay,
-                    createOverlayLayoutParams());
-            AutomationLog.step("Return overlay shown");
-        } catch (RuntimeException error) {
-            returnOverlay = null;
-            AutomationLog.error(
-                    "Return overlay show failed",
-                    error.getMessage(),
-                    error);
-        }
+        return button;
     }
 
     private WindowManager.LayoutParams createOverlayLayoutParams() {
@@ -849,6 +1027,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private void fail(String message) {
         AutomationLog.error("Automation failed", message, null);
         boolean activeFailure = commandActive || isReturnActive(this);
+        automationState = AutomationState.RETURNING;
         commandActive = false;
         phase = Phase.IDLE;
         handler.removeCallbacks(automationRunnable);
@@ -864,6 +1043,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
         AutomationLog.error("Camera command failed", "reason=" + reason, null);
         DoorAccessibilityService instance = connectedInstance;
         if (instance != null) {
+            instance.automationState = AutomationState.RETURNING;
             instance.cancelLocalAutomation();
             instance.deviceClicked = false;
             instance.doubleTapDispatched = false;
@@ -887,6 +1067,8 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private void cancelLocalAutomation() {
         commandActive = false;
         phase = Phase.IDLE;
+        automationState = AutomationState.IDLE;
+        openingFromDoorbell = false;
         handler.removeCallbacksAndMessages(null);
         removeReturnOverlay("Automation cancelled");
     }
@@ -959,6 +1141,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
                     "Return request ignored",
                     "manual=" + manual + " active=false");
             return;
+        }
+        DoorAccessibilityService returningInstance = connectedInstance;
+        if (returningInstance != null) {
+            returningInstance.automationState = AutomationState.RETURNING;
         }
         setReturnActive(context, false);
         cancelAutoReturn(context);

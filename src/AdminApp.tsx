@@ -240,6 +240,9 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       onUnavailable: () => setNotice(COMPANION_UNAVAILABLE_MESSAGE),
     })
   }
+  function showDoorLockUnavailable() {
+    setNotice('Brava još nije povezana.')
+  }
   const filteredClients = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('hr')
     return data.clients
@@ -1372,7 +1375,10 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       )
     : []
   return <div className="app-shell">
-    {isSupportedSalonTablet() && <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>}
+    {isSupportedSalonTablet() && <div className="door-controls-fab">
+      <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>
+      <button className="door-open-placeholder" type="button" aria-disabled="true" onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
+    </div>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
       <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>

@@ -2,6 +2,9 @@ package hr.salon.kristina.companion;
 
 public final class CompanionConfig {
     public static final String TAPO_PACKAGE = "com.tplink.iot";
+    public static final String TAPO_DOORBELL_CHANNEL_ID =
+            "tapo_notification_channel_door_bell_ring";
+    public static final boolean ENABLE_DOORBELL_AUTOMATION = true;
     public static final String PRIMARY_DEVICE_NAME = "Tapo D235 salon";
     public static final String ALTERNATIVE_DEVICE_NAME = "Tapo D235";
 
@@ -12,6 +15,7 @@ public final class CompanionConfig {
     public static final int FALLBACK_SCREEN_HEIGHT = 1920;
 
     public static final long TAPO_STARTUP_WAIT_MS = 250L;
+    public static final long DOORBELL_IGNORE_SETTLE_DELAY_MS = 250L;
     public static final long HOME_SETTLE_DELAY_MS = 250L;
     public static final long SEARCH_INTERVAL_MS = 250L;
     public static final long DEVICE_SEARCH_TIMEOUT_MS = 10_000L;
@@ -52,6 +56,7 @@ public final class CompanionConfig {
     public static final int RETURN_OVERLAY_CORNER_RADIUS_DP = 24;
     public static final int RETURN_OVERLAY_MIN_HEIGHT_DP = 48;
     public static final float RETURN_OVERLAY_TEXT_SIZE_SP = 17F;
+    public static final int RETURN_OVERLAY_BUTTON_GAP_DP = 12;
 
     private CompanionConfig() {
     }
