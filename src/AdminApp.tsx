@@ -1389,8 +1389,9 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         rescheduleDuration,
       )
     : []
-  return <div className="app-shell">
-    {isSupportedSalonTablet() && <div className="door-controls-fab">
+  const showDoorControls = isSupportedSalonTablet()
+  return <div className={`app-shell${showDoorControls ? ' has-door-controls' : ''}`}>
+    {showDoorControls && <div className="door-controls-fab">
       <div className={`boiler-control boiler-${boilerState}${boilerBusy ? ' busy' : ''}`}>
         <button className="boiler-status" type="button" disabled={boilerBusy} onClick={()=>runBoilerCommand('status')}>
           Bojler <span aria-hidden="true">●</span> {boilerBusy

@@ -1109,8 +1109,10 @@
 
 .door-controls-fab {
   position: fixed;
+  left: 16px;
   right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  top: calc(12px + env(safe-area-inset-top));
+  bottom: auto;
   z-index: 99999;
   display: flex;
   align-items: center;
@@ -1166,6 +1168,7 @@
 }
 
 .video-doorbell-fab {
+  margin-left: auto;
   border: 1px solid #9f5e47;
   background: var(--terracotta);
   color: white;
@@ -1179,17 +1182,18 @@
   cursor: pointer;
 }
 
-.app-shell > main {
-  padding-bottom: calc(140px + env(safe-area-inset-bottom));
+.app-shell.has-door-controls > main {
+  padding-top: calc(78px + env(safe-area-inset-top));
 }
 
 @media (max-width: 700px) {
-  .door-controls-fab {
-    bottom: calc(76px + env(safe-area-inset-bottom));
+  .app-shell.has-door-controls .door-controls-fab {
+    top: calc(12px + env(safe-area-inset-top));
+    bottom: auto;
   }
 
-  .app-shell > main {
-    padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  .app-shell.has-door-controls > main {
+    padding-top: calc(78px + env(safe-area-inset-top));
   }
 }
 
