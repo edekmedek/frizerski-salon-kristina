@@ -40,11 +40,24 @@ public final class CompanionConfig {
     };
     public static final String DEEP_LINK_SCHEME = "salonkristina";
     public static final String DEEP_LINK_HOST = "door";
+    public static final String BOILER_DEEP_LINK_HOST = "boiler";
     public static final String PATH_LIVE = "/live";
     public static final String PATH_OPEN = "/open";
     public static final String PATH_RETURN = "/return";
     public static final String PATH_STATUS = "/status";
     public static final String PATH_ERROR = "/error";
+    public static final String BOILER_DEVICE_NAME = "Bojler u salonu";
+    public static final String BOILER_CARD_ID = TAPO_PACKAGE + ":id/content";
+    public static final String BOILER_SWITCH_ID = TAPO_PACKAGE + ":id/device_switch";
+    public static final long BOILER_UI_TIMEOUT_MS = 10_000L;
+    public static final long BOILER_CONFIRM_TIMEOUT_MS = 10_000L;
+    public static final long BOILER_STABLE_DELAY_MS = 350L;
+    public static final long BOILER_ACTION_CLICK_SETTLE_MS = 1_500L;
+    public static final long BOILER_GESTURE_DURATION_MS = 80L;
+    public static final int BOILER_SWITCH_MIN_SIZE_PX = 32;
+    public static final int BOILER_SWITCH_MIN_CENTER_MARGIN_PX = 12;
+    public static final int BOILER_MAX_TAPO_BACK_NAVIGATION = 3;
+    public static final long BOILER_BACK_SETTLE_MS = 700L;
 
     public static final String NOTIFICATION_CHANNEL_ID = "return_to_salon_v3_quiet";
     public static final int NOTIFICATION_ID = 235;

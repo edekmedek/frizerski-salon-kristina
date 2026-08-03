@@ -46,6 +46,23 @@
         </activity>
 
         <activity
+            android:name=".BoilerDeepLinkActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.SalonKristinaCompanion.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="boiler"
+                    android:pathPrefix="/"
+                    android:scheme="salonkristina" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".ReturnToSalonActivity"
             android:excludeFromRecents="true"
             android:exported="false"

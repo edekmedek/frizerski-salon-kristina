@@ -1126,6 +1126,45 @@
   box-shadow: 0 9px 24px #6c3d2d38;
 }
 
+.boiler-control {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  min-height: 46px;
+  border: 1px solid #c8bdb5;
+  border-radius: 999px;
+  background: #f7f2ee;
+  box-shadow: 0 5px 14px #4b382c1f;
+}
+
+.boiler-control button {
+  border: 0;
+  background: transparent;
+  color: #564b45;
+  font-weight: 750;
+}
+
+.boiler-status {
+  padding: 10px 13px 10px 16px;
+}
+
+.boiler-action {
+  padding: 10px 16px 10px 13px;
+  border-left: 1px solid #d8ccc4 !important;
+  color: var(--terracotta) !important;
+}
+
+.boiler-on .boiler-status span { color: #27845e; }
+.boiler-off .boiler-status span { color: #987768; }
+.boiler-unknown .boiler-status span,
+.boiler-control.busy .boiler-status span { color: #c18722; }
+.boiler-control.busy { opacity: .82; }
+
+.boiler-control button:focus-visible {
+  outline: 3px solid #dba98f;
+  outline-offset: -3px;
+}
+
 .video-doorbell-fab {
   border: 1px solid #9f5e47;
   background: var(--terracotta);

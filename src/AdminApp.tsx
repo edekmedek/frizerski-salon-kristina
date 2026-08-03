@@ -34,6 +34,7 @@ import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import { doorbellService } from './lib/doorbellService'
 import { COMPANION_UNAVAILABLE_MESSAGE, isSupportedSalonTablet, openSalonDoorCompanion } from './lib/tapoApp'
+import { consumeBoilerResult, readCachedBoilerState, requestBoilerCommand, type BoilerCommand, type BoilerState } from './lib/boilerApp'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -111,6 +112,13 @@ function emptyAppointment(appointments:Appointment[]):Appointment{
 
 function AdminApp({ onLogout }: { onLogout: () => void }) {
   const initialAdminPinFields = createEmptyAdminPinFields()
+  const [initialBoilerResult] = useState(() => consumeBoilerResult())
+  const [boilerState, setBoilerState] = useState<BoilerState>(() => {
+    const result = initialBoilerResult?.result
+    return result === 'on' || result === 'off' ? result : readCachedBoilerState()
+  })
+  const [boilerBusy, setBoilerBusy] = useState(false)
+  const [boilerOperation, setBoilerOperation] = useState<BoilerCommand>('status')
   const [data, setData] = useState<SalonData>(() => loadSalonData())
   const [view, setView] = useState<View>(() => isTabletViewport() ? 'salon-dashboard' : 'pregled')
   const [query, setQuery] = useState('')
@@ -242,6 +250,13 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }
   function showDoorLockUnavailable() {
     setNotice('Brava još nije povezana.')
+  }
+  function runBoilerCommand(command: BoilerCommand) {
+    if (boilerBusy) return
+    setBoilerBusy(true)
+    setBoilerOperation(command)
+    setBoilerState('unknown')
+    requestBoilerCommand(command)
   }
   const filteredClients = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('hr')
@@ -1376,6 +1391,16 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     : []
   return <div className="app-shell">
     {isSupportedSalonTablet() && <div className="door-controls-fab">
+      <div className={`boiler-control boiler-${boilerState}${boilerBusy ? ' busy' : ''}`}>
+        <button className="boiler-status" type="button" disabled={boilerBusy} onClick={()=>runBoilerCommand('status')}>
+          Bojler <span aria-hidden="true">●</span> {boilerBusy
+            ? boilerOperation === 'on' ? 'UKLJUČUJEM…' : boilerOperation === 'off' ? 'ISKLJUČUJEM…' : 'PROVJERA…'
+            : boilerState === 'on' ? 'UKLJUČEN' : boilerState === 'off' ? 'ISKLJUČEN' : 'STANJE NEPOZNATO'}
+        </button>
+        {!boilerBusy && <button className="boiler-action" type="button" onClick={()=>runBoilerCommand(boilerState === 'on' ? 'off' : boilerState === 'off' ? 'on' : 'status')}>
+          {boilerState === 'on' ? 'Isključi' : boilerState === 'off' ? 'Uključi' : 'Pokušaj ponovno'}
+        </button>}
+      </div>
       <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>
       <button className="door-open-placeholder" type="button" aria-disabled="true" onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
     </div>}

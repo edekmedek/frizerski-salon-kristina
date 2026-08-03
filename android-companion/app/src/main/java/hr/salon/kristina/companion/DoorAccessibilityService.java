@@ -37,7 +37,8 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Locale;
 
-public final class DoorAccessibilityService extends AccessibilityService {
+public final class DoorAccessibilityService extends AccessibilityService
+        implements BoilerAutomationController.Host {
     private enum Phase {
         IDLE,
         WAITING_FOR_DEVICE,
@@ -58,6 +59,8 @@ public final class DoorAccessibilityService extends AccessibilityService {
     private static Runnable notificationWatchdogRunnable;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final BoilerAutomationController boilerController =
+            new BoilerAutomationController(this, handler);
     private Phase phase = Phase.IDLE;
     private AutomationState automationState = AutomationState.IDLE;
     private long phaseDeadlineMs;
@@ -127,6 +130,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
                         + " commandActive=" + commandActive
                         + " phase=" + phase
                         + " deviceClicked=" + deviceClicked);
+        if (boilerController.isActive()) {
+            boilerController.onTapoUiChanged();
+            return;
+        }
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             lastWindowClass = observedClass;
             AutomationLog.step(
@@ -217,6 +224,10 @@ public final class DoorAccessibilityService extends AccessibilityService {
             }
             return;
         }
+        if (boilerController.isActive()) {
+            AutomationLog.step("Boiler interrupted", "reason=doorbell_priority");
+            boilerController.cancelSilently();
+        }
         openLiveView("doorbell");
     }
 
@@ -265,6 +276,7 @@ public final class DoorAccessibilityService extends AccessibilityService {
             connectedInstance = null;
         }
         removeReturnOverlay("Accessibility service destroyed");
+        boilerController.cancelSilently();
         cancelLocalAutomation();
         super.onDestroy();
     }
@@ -284,6 +296,85 @@ public final class DoorAccessibilityService extends AccessibilityService {
 
     public void openLiveView() {
         openLiveView("button");
+    }
+
+    public void executeBoilerCommand(BoilerCommand command) {
+        if (commandActive || automationState != AutomationState.IDLE
+                || isReturnActive(this)) {
+            launchSalonWithBoilerResult(this, "error", "busy");
+            return;
+        }
+        boilerController.start(command);
+    }
+
+    @Override
+    public boolean sendHome() {
+        return performGlobalAction(GLOBAL_ACTION_HOME);
+    }
+
+    @Override
+    public boolean sendBack() {
+        return performGlobalAction(GLOBAL_ACTION_BACK);
+    }
+
+    @Override
+    public Intent tapoLaunchIntent() {
+        Intent intent = getPackageManager().getLaunchIntentForPackage(
+                CompanionConfig.TAPO_PACKAGE);
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        }
+        return intent;
+    }
+
+    @Override
+    public void launch(Intent intent) {
+        startActivity(intent);
+    }
+
+    @Override
+    public AccessibilityNodeInfo tapoRoot() {
+        return getTapoRoot();
+    }
+
+    @Override
+    public Rect visibleScreenBounds() {
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        return new Rect(0, 0, metrics.widthPixels, metrics.heightPixels);
+    }
+
+    @Override
+    public boolean dispatchTap(
+            float x,
+            float y,
+            BoilerAutomationController.GestureCallback callback) {
+        Path tap = new Path();
+        tap.moveTo(x, y);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(
+                        tap, 0L, CompanionConfig.BOILER_GESTURE_DURATION_MS))
+                .build();
+        return dispatchGesture(gesture, new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription gestureDescription) {
+                callback.onCompleted();
+            }
+
+            @Override
+            public void onCancelled(GestureDescription gestureDescription) {
+                callback.onCancelled();
+            }
+        }, null);
+    }
+
+    @Override
+    public void returnResult(
+            String result,
+            String detail,
+            long elapsedMs,
+            boolean clicked) {
+        launchSalonWithBoilerResult(this, result, detail, elapsedMs, clicked);
     }
 
     private void openLiveView(String source) {
@@ -1375,6 +1466,43 @@ public final class DoorAccessibilityService extends AccessibilityService {
             AutomationLog.step("Companion status returned", "ready=" + ready);
         } catch (RuntimeException error) {
             AutomationLog.error("Companion status return failed", error.getMessage(), error);
+            launchSalon(context);
+        }
+    }
+
+    public static void launchSalonWithBoilerResult(
+            Context context,
+            String result,
+            String detail) {
+        launchSalonWithBoilerResult(context, result, detail, 0L, false);
+    }
+
+    public static void launchSalonWithBoilerResult(
+            Context context,
+            String result,
+            String detail,
+            long elapsedMs,
+            boolean clicked) {
+        Uri statusUri = Uri.parse(CompanionConfig.SALON_URL)
+                .buildUpon()
+                .appendQueryParameter("boiler_result", result)
+                .appendQueryParameter("boiler_detail", detail)
+                .appendQueryParameter("boiler_elapsed_ms", String.valueOf(elapsedMs))
+                .appendQueryParameter("boiler_clicked", clicked ? "1" : "0")
+                .build();
+        Intent webApkIntent = findSalonWebApkIntent(context);
+        Intent intent = new Intent(Intent.ACTION_VIEW, statusUri)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (webApkIntent != null && webApkIntent.getPackage() != null) {
+            intent.setPackage(webApkIntent.getPackage());
+        }
+        try {
+            context.startActivity(intent);
+            AutomationLog.step("Boiler result returned",
+                    "result=" + result + " detail=" + detail
+                            + " elapsedMs=" + elapsedMs + " clicked=" + clicked);
+        } catch (RuntimeException error) {
+            AutomationLog.error("Boiler result return failed", error.getMessage(), error);
             launchSalon(context);
         }
     }
