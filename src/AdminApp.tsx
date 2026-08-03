@@ -1393,14 +1393,14 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   return <div className={`app-shell${showDoorControls ? ' has-door-controls' : ''}`}>
     {showDoorControls && <div className="door-controls-fab">
       <div className={`boiler-control boiler-${boilerState}${boilerBusy ? ' busy' : ''}`}>
+        {!boilerBusy && <button className="boiler-action" type="button" onClick={()=>runBoilerCommand(boilerState === 'on' ? 'off' : boilerState === 'off' ? 'on' : 'status')}>
+          {boilerState === 'on' ? 'Isključi' : boilerState === 'off' ? 'Uključi' : 'Pokušaj ponovno'}
+        </button>}
         <button className="boiler-status" type="button" disabled={boilerBusy} onClick={()=>runBoilerCommand('status')}>
           Bojler <span aria-hidden="true">●</span> {boilerBusy
             ? boilerOperation === 'on' ? 'UKLJUČUJEM…' : boilerOperation === 'off' ? 'ISKLJUČUJEM…' : 'PROVJERA…'
             : boilerState === 'on' ? 'UKLJUČEN' : boilerState === 'off' ? 'ISKLJUČEN' : 'STANJE NEPOZNATO'}
         </button>
-        {!boilerBusy && <button className="boiler-action" type="button" onClick={()=>runBoilerCommand(boilerState === 'on' ? 'off' : boilerState === 'off' ? 'on' : 'status')}>
-          {boilerState === 'on' ? 'Isključi' : boilerState === 'off' ? 'Uključi' : 'Pokušaj ponovno'}
-        </button>}
       </div>
       <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>
       <button className="door-open-placeholder" type="button" aria-disabled="true" onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>

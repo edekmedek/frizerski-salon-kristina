@@ -1151,8 +1151,8 @@
 }
 
 .boiler-action {
-  padding: 10px 16px 10px 13px;
-  border-left: 1px solid #d8ccc4 !important;
+  padding: 10px 13px 10px 16px;
+  border-right: 1px solid #d8ccc4 !important;
   color: var(--terracotta) !important;
 }
 

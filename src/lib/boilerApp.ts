@@ -16,8 +16,12 @@ export function boilerDeepLink(command: BoilerCommand) {
   return `salonkristina://boiler/${command}`
 }
 
+export function boilerIntentLink(command: BoilerCommand) {
+  return `intent://boiler/${command}#Intent;scheme=salonkristina;package=hr.salon.kristina.companion;end`
+}
+
 export function requestBoilerCommand(command: BoilerCommand) {
-  window.location.href = boilerDeepLink(command)
+  window.location.href = boilerIntentLink(command)
 }
 
 export function consumeBoilerResult(): ConsumedBoilerResult | null {

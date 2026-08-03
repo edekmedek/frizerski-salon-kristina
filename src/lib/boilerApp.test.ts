@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { boilerDeepLink, consumeBoilerResult, readCachedBoilerState } from './boilerApp'
+import { boilerDeepLink, boilerIntentLink, consumeBoilerResult, readCachedBoilerState } from './boilerApp'
 
 describe('boiler companion bridge', () => {
   beforeEach(() => {
@@ -12,6 +12,10 @@ describe('boiler companion bridge', () => {
     expect(boilerDeepLink('status')).toBe('salonkristina://boiler/status')
     expect(boilerDeepLink('on')).toBe('salonkristina://boiler/on')
     expect(boilerDeepLink('off')).toBe('salonkristina://boiler/off')
+  })
+
+  it('targets the installed companion from Chrome', () => {
+    expect(boilerIntentLink('status')).toBe('intent://boiler/status#Intent;scheme=salonkristina;package=hr.salon.kristina.companion;end')
   })
 
   it('consumes and caches a confirmed state', () => {
