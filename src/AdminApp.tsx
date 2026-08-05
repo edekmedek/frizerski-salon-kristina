@@ -298,7 +298,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     durationInput?.setAttribute('step', '15')
   }, [appointmentForm])
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) setNotice(message) }
-  function changeView(next: View) { if (next === 'cjenik') setOpenPriceCategoryId(''); setView(next) }
+  function changeView(next: View) {
+    if (next === 'cjenik') setOpenPriceCategoryId('')
+    if (next === 'poruke-live') setSelectedAdminMessage(undefined)
+    if (next === 'zahtjevi-live') setSelectedAdminRequest(undefined)
+    setView(next)
+  }
   function openVideoDoorbell() {
     openSalonDoorCompanion({
       onUnavailable: () => setNotice(COMPANION_UNAVAILABLE_MESSAGE),
