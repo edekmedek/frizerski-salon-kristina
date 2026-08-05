@@ -306,16 +306,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     if (next === 'zahtjevi-live') setSelectedAdminRequest(undefined)
     setView(next)
   }
-
-  useEffect(() => {
-    if (view === 'poruke') {
-      setView('poruke-live')
-      return
-    }
-    if (view === 'zahtjevi') {
-      setView('zahtjevi-live')
-    }
-  }, [view])
   function openVideoDoorbell() {
     openSalonDoorCompanion({
       onUnavailable: () => setNotice(COMPANION_UNAVAILABLE_MESSAGE),
