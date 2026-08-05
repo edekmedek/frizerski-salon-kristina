@@ -11,6 +11,10 @@ export type ConsumedBoilerResult = {
 
 const BOILER_CACHE_KEY = 'salon-boiler-confirmed-state'
 const BOILER_CACHE_MAX_AGE_MS = 120_000
+const BOILER_AUTO_LAST_REQUEST_KEY = 'salon-boiler-auto-last-request'
+const BOILER_AUTO_TRANSACTION_KEY = 'salon-boiler-auto-transaction'
+export const BOILER_AUTO_COOLDOWN_MS = 10_000
+export const BOILER_AUTO_RETRY_WINDOW_MS = 30_000
 
 export function boilerDeepLink(command: BoilerCommand) {
   return `salonkristina://boiler/${command}`
@@ -22,6 +26,49 @@ export function boilerIntentLink(command: BoilerCommand) {
 
 export function requestBoilerCommand(command: BoilerCommand) {
   window.location.href = boilerIntentLink(command)
+}
+
+export function consumeBoilerResumeSignal() {
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('boiler_resume') !== '1') return false
+  url.searchParams.delete('boiler_resume')
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  return true
+}
+
+export function supportsAutomaticBoilerStatus(userAgent = navigator.userAgent) {
+  return /Android/i.test(userAgent)
+}
+
+export function claimAutomaticBoilerStatus(now = Date.now()) {
+  const lastRequest = Number(sessionStorage.getItem(BOILER_AUTO_LAST_REQUEST_KEY))
+  if (Number.isFinite(lastRequest) && now - lastRequest < BOILER_AUTO_COOLDOWN_MS) return false
+  sessionStorage.setItem(BOILER_AUTO_LAST_REQUEST_KEY, String(now))
+  sessionStorage.setItem(BOILER_AUTO_TRANSACTION_KEY, JSON.stringify({ startedAt: now, retries: 0 }))
+  return true
+}
+
+export function consumeAutomaticBoilerRetry(result: BoilerResult, now = Date.now()) {
+  const raw = sessionStorage.getItem(BOILER_AUTO_TRANSACTION_KEY)
+  if (!raw) return false
+  try {
+    const transaction = JSON.parse(raw) as { startedAt?: number; retries?: number }
+    if (result === 'on' || result === 'off'
+      || typeof transaction.startedAt !== 'number'
+      || now - transaction.startedAt > BOILER_AUTO_RETRY_WINDOW_MS
+      || transaction.retries !== 0) {
+      sessionStorage.removeItem(BOILER_AUTO_TRANSACTION_KEY)
+      return false
+    }
+    sessionStorage.setItem(BOILER_AUTO_TRANSACTION_KEY, JSON.stringify({
+      startedAt: transaction.startedAt,
+      retries: 1,
+    }))
+    return true
+  } catch {
+    sessionStorage.removeItem(BOILER_AUTO_TRANSACTION_KEY)
+    return false
+  }
 }
 
 export function consumeBoilerResult(): ConsumedBoilerResult | null {

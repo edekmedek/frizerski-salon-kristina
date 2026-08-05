@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { boilerDeepLink, boilerIntentLink, consumeBoilerResult, readCachedBoilerState } from './boilerApp'
+import { BOILER_AUTO_COOLDOWN_MS, boilerDeepLink, boilerIntentLink, claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, supportsAutomaticBoilerStatus } from './boilerApp'
 
 describe('boiler companion bridge', () => {
+  beforeEach(() => sessionStorage.clear())
   beforeEach(() => {
     localStorage.clear()
     window.history.replaceState({}, '', '/')
@@ -12,6 +13,35 @@ describe('boiler companion bridge', () => {
     expect(boilerDeepLink('status')).toBe('salonkristina://boiler/status')
     expect(boilerDeepLink('on')).toBe('salonkristina://boiler/on')
     expect(boilerDeepLink('off')).toBe('salonkristina://boiler/off')
+  })
+
+  it('enables lifecycle status checks only on Android', () => {
+    expect(supportsAutomaticBoilerStatus('Mozilla/5.0 (Linux; Android 12; SM-X200)')).toBe(true)
+    expect(supportsAutomaticBoilerStatus('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe(false)
+  })
+
+  it('debounces automatic checks across WebAPK remounts', () => {
+    expect(claimAutomaticBoilerStatus(10_000)).toBe(true)
+    expect(claimAutomaticBoilerStatus(10_000 + BOILER_AUTO_COOLDOWN_MS - 1)).toBe(false)
+    expect(claimAutomaticBoilerStatus(10_000 + BOILER_AUTO_COOLDOWN_MS)).toBe(true)
+  })
+
+  it('allows exactly one controlled retry for an automatic failed status read', () => {
+    expect(claimAutomaticBoilerStatus(10_000)).toBe(true)
+    expect(consumeAutomaticBoilerRetry('unknown', 11_000)).toBe(true)
+    expect(consumeAutomaticBoilerRetry('timeout', 12_000)).toBe(false)
+  })
+
+  it('does not retry an automatic confirmed status read', () => {
+    expect(claimAutomaticBoilerStatus(10_000)).toBe(true)
+    expect(consumeAutomaticBoilerRetry('on', 11_000)).toBe(false)
+  })
+
+  it('consumes the one-time Android return marker without leaving it in the URL', () => {
+    window.history.replaceState({}, '', '/?boiler_resume=1#/admin')
+    expect(consumeBoilerResumeSignal()).toBe(true)
+    expect(window.location.search).toBe('')
+    expect(consumeBoilerResumeSignal()).toBe(false)
   })
 
   it('targets the installed companion from Chrome', () => {
