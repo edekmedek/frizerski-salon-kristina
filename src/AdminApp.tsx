@@ -49,6 +49,34 @@ const nav: { id: View; label: string; icon: string }[] = [
   { id: 'cjenik', label: 'Cjenik', icon: '€' }, { id: 'poruke-live', label: 'Poruke', icon: '✉' }, { id: 'arhiva', label: 'Arhiva', icon: '▧' },
   { id: 'postavke', label: 'Postavke', icon: '⚙' },
 ]
+type AdminIdentity = { mark: string; name: string; title: string }
+
+function initialsFromName(value: string) {
+  const words = value.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return 'A'
+  const initials = words.slice(0, 2).map(word => word[0]?.toUpperCase() ?? '').join('')
+  return initials || 'A'
+}
+
+function resolveAdminIdentity(emailValue: string, fullName: string): AdminIdentity {
+  const email = emailValue.trim().toLowerCase()
+  if (email.startsWith('edekmedek@') || email.includes('edekmedek')) {
+    return { mark: 'E', name: 'Eduard Admin', title: 'Administrator' }
+  }
+  if (email.startsWith('kristina@') || email.includes('kristina')) {
+    return { mark: 'K', name: 'Kristina', title: 'Vlasnica salona' }
+  }
+  const normalizedName = fullName.trim()
+  if (normalizedName) {
+    return { mark: initialsFromName(normalizedName), name: normalizedName, title: 'Administrator' }
+  }
+  const fallbackName = email.includes('@') ? email.split('@')[0] : 'Admin'
+  const prettyName = fallbackName
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, letter => letter.toUpperCase())
+  return { mark: initialsFromName(prettyName), name: prettyName, title: 'Administrator' }
+}
+
 const emptyClient = (): Client => ({ id: '', firstName: '', lastName: '', phone: '', note: '', createdAt: '', updatedAt: '' })
 const timeOptions = Array.from({ length: 49 }, (_, index) => {
   const minutes = 8 * 60 + index * 15
@@ -175,18 +203,43 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [requestDurationOverride, setRequestDurationOverride] = useState<number>()
   const [selectedAdminMessage, setSelectedAdminMessage] = useState<AdminMessage>()
   const [inboxBusy, setInboxBusy] = useState(false)
+  const [adminIdentity, setAdminIdentity] = useState<AdminIdentity>({ mark: 'A', name: 'Admin', title: 'Administrator' })
   const requestDraftDayChangeRef = useRef(0)
   const requestDraftRef = useRef<HTMLDivElement>(null)
   const requestNeedsScrollRef = useRef(false)
   const knownAdminRequestVersionsRef = useRef<Map<string, string>>(new Map())
   const knownAdminMessageIdsRef = useRef<Set<string>>(new Set())
   const adminInboxInitializedRef = useRef(false)
+  const appointmentClickTimerRef = useRef<number | null>(null)
+  const appointmentClickTargetRef = useRef('')
   const clientSavingRef = useRef(false)
   const imageFiles = useRef<{ before?: File; after?: File }>({})
   const previousNoChargeRef = useRef(false)
   const priceBeforeNoChargeRef = useRef<{ appointmentId: string; price: number; manual: boolean } | null>(null)
   const boilerBusyRef = useRef(false)
   useAutoDismissNotice(notice, setNotice)
+
+  useEffect(() => {
+    if (!supabase) return
+    let active = true
+    void supabase.auth.getUser().then(({ data, error }) => {
+      if (!active || error || !data.user) return
+      const metadataName = typeof data.user.user_metadata?.full_name === 'string'
+        ? data.user.user_metadata.full_name
+        : typeof data.user.user_metadata?.name === 'string'
+          ? data.user.user_metadata.name
+          : ''
+      const identity = resolveAdminIdentity(data.user.email ?? '', metadataName)
+      setAdminIdentity(identity)
+    })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => () => {
+    if (appointmentClickTimerRef.current !== null) {
+      window.clearTimeout(appointmentClickTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!supabase) return
@@ -1191,6 +1244,28 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     setRescheduleDraft({ ...appointment })
   }
 
+  function queueAppointmentReschedule(appointment: Appointment) {
+    if (appointmentClickTimerRef.current !== null) {
+      window.clearTimeout(appointmentClickTimerRef.current)
+    }
+    appointmentClickTargetRef.current = appointment.id
+    appointmentClickTimerRef.current = window.setTimeout(() => {
+      appointmentClickTimerRef.current = null
+      if (appointmentClickTargetRef.current !== appointment.id) return
+      appointmentClickTargetRef.current = ''
+      beginAppointmentReschedule(appointment)
+    }, 220)
+  }
+
+  function openAppointmentDetailsFromCalendar(appointment: Appointment) {
+    if (appointmentClickTimerRef.current !== null) {
+      window.clearTimeout(appointmentClickTimerRef.current)
+      appointmentClickTimerRef.current = null
+    }
+    appointmentClickTargetRef.current = ''
+    setAppointmentDetails(appointment)
+  }
+
   async function saveRescheduledAppointment(droppedAppointment = rescheduleDraft) {
     if (!supabase || !droppedAppointment) return
     const original = data.appointments.find(item => item.id === droppedAppointment.id)
@@ -1479,12 +1554,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     </div>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
-      <div className="owner"><span>K</span><div><strong>Kristina</strong><small>Vlasnica salona</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
+      <div className="owner"><span>{adminIdentity.mark}</span><div><strong>{adminIdentity.name}</strong><small>{adminIdentity.title}</small></div><button className="owner-logout" onClick={onLogout}>Odjava</button></div>
     </aside>
     <main><header><div><p className="eyebrow">Salon Kristina</p><h1>{title}</h1></div><div className={`header-actions sync-${syncStatus}`}><span className="status-dot" /> {syncStatusLabel(syncStatus)}</div></header>
       {view === 'pregled' && <div className="dashboard-inbox-summary"><button onClick={()=>changeView('zahtjevi-live')}><strong>{inboxCounts.requests}</strong><span>Novi zahtjevi</span></button><button onClick={()=>changeView('poruke-live')}><strong>{inboxCounts.messages}</strong><span>Nove poruke</span></button></div>}
       {view === 'salon-dashboard' && <SalonDashboard appointments={data.appointments} clients={data.clients} unreadMessages={inboxCounts.messages} unreadRequests={inboxCounts.requests} doorbell={doorbellService} onOpenSchedule={()=>changeView('pregled')} onOpenMessages={()=>changeView('poruke-live')} onOpenRequests={()=>changeView('zahtjevi-live')}/>}
-      {view === 'pregled' && <section className="day-schedule"><div className="schedule-toolbar"><div><p className="eyebrow">DANAŠNJI RASPORED</p><h2>{new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString('hr-HR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h2></div><div className="schedule-navigation">{!viewingToday&&<button className="secondary day-arrow" type="button" aria-label="Prethodni dan" onClick={()=>moveCalendarDay(-1)}>‹</button>}<button className="secondary today-button" type="button" onClick={()=>void requestCalendarDate(todayCalendarDate)}>Danas</button><button className="secondary day-arrow" type="button" aria-label="Sljedeći dan" onClick={()=>moveCalendarDay(1)}>›</button><input aria-label="Odaberite datum rasporeda" type="date" min={todayCalendarDate} value={selectedCalendarDate} onChange={event=>void requestCalendarDate(event.target.value)}/></div></div><p className={`working-hours-label ${workingHours?'':'closed'}`}>{workingHoursLabel}</p><p className="schedule-hint">Radno vrijeme označeno je toplom pozadinom; termini izvan njega i dalje su dopušteni.</p><div className="calendar-scroll"><div className="day-calendar"><div className="calendar-time-axis" aria-hidden="true">{calendarMarks.map(mark=><span className={mark.isHour?'hour':'half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}>{mark.label}</span>)}</div><div className={`calendar-grid ${workingHours?'has-working-hours':'closed-day'}`} onClick={openCalendarSlot}>{workingHours&&<span className="working-hours-band" aria-hidden="true" style={{top:`${workingHours.topPercent}%`,height:`${workingHours.heightPercent}%`}}/>}{calendarMarks.map(mark=><span className={mark.isHour?'calendar-line hour':'calendar-line half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}/>)}{selectedAdminRequest&&requestDraftLayout?.visible&&<div ref={requestDraftRef} data-request-id={selectedAdminRequest.id} className={`request-draft-event ${requestDraftConflicts.length?'has-conflict':''}`} style={{top:`${requestDraftLayout.topPercent}%`,height:`max(${requestDraftLayout.heightPercent}%, 52px)`}} onPointerDown={event=>{if((event.target as HTMLElement).closest('button'))return;event.currentTarget.setPointerCapture(event.pointerId)}} onPointerMove={event=>{if(!event.currentTarget.hasPointerCapture(event.pointerId))return;const grid=event.currentTarget.parentElement?.getBoundingClientRect();if(grid)setRequestDraftTime(timeFromCalendarPosition(event.clientY-grid.top,grid.height))}} onPointerUp={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}} onClick={event=>event.stopPropagation()}><div className="request-draft-time"><strong>{requestDraftTime}–{minutesToTime(timeToMinutes(requestDraftTime)+requestDraftDuration)}</strong><span>{requestDraftDuration} min</span></div><div className="request-draft-summary"><strong>{selectedAdminRequest.clientName}</strong>{selectedAdminRequest.treatments.length?<ul>{selectedAdminRequest.treatments.map(item=><li key={item.serviceId}>{item.name} · {item.durationMinutes} min</li>)}</ul>:<span>Bez odabrane usluge</span>}{(selectedAdminRequest.clientReply||selectedAdminRequest.message)&&<small>{selectedAdminRequest.clientReply?`Nova želja klijenta: ${selectedAdminRequest.clientReply}`:selectedAdminRequest.message}</small>}</div><div className="request-draft-controls">{requestDraftConflicts.length>0&&<em>Preklapanje s {requestDraftConflicts.length} {requestDraftConflicts.length===1?'terminom':'termina'} je dopušteno</em>}<button type="button" disabled={inboxBusy} onClick={()=>void sendSelectedRequestProposal()}>{inboxBusy?'Slanje…':'Pošalji prijedlog termina'}</button><button type="button" className="request-draft-close" aria-label="Zatvori probni termin" onClick={()=>{setSelectedAdminRequest(undefined);setRequestDraftTime('')}}>×</button></div></div>}{calendarAppointments.map((item,index)=>{const catalogDuration=serviceCatalog.find(service=>service.id===item.serviceId)?.durationMinutes;const layout=calendarEventLayout(item.dateTime,item.serviceDuration??catalogDuration);if(!layout.visible)return null;const overlap=calendarOverlapDepth(calendarAppointments,index);const start=item.dateTime.slice(11,16);const end=minutesToTime(timeToMinutes(start)+layout.displayDuration);const pending=item.confirmationStatus==='pending';return <button type="button" data-appointment-id={item.id} className={`calendar-event ${item.status} ${item.noCharge?'no-charge':''} ${pending?'pending-confirmation':''} ${overlap.overlaps?'has-overlap':''} ${overlap.depth>0?'overlap-top':''}`} style={{top:`${layout.topPercent}%`,height:`max(${layout.heightPercent}%, 34px)`,left:`${8+Math.min(overlap.depth,3)*12}px`}} key={item.id} onClick={event=>{event.stopPropagation();setAppointmentDetails(item)}}><time>{start}–{end}</time><strong>{findClientName(data.clients,item.clientId)}</strong><span>{item.service||'Termin bez tretmana'}</span><small>{pending?'Čeka potvrdu':item.noCharge?'Gratis':appointmentStatusLabel(item.status)}</small></button>})}</div></div></div></section>}
+      {view === 'pregled' && <section className="day-schedule"><div className="schedule-toolbar"><div><p className="eyebrow">DANAŠNJI RASPORED</p><h2>{new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString('hr-HR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</h2></div><div className="schedule-navigation">{!viewingToday&&<button className="secondary day-arrow" type="button" aria-label="Prethodni dan" onClick={()=>moveCalendarDay(-1)}>‹</button>}<button className="secondary today-button" type="button" onClick={()=>void requestCalendarDate(todayCalendarDate)}>Danas</button><button className="secondary day-arrow" type="button" aria-label="Sljedeći dan" onClick={()=>moveCalendarDay(1)}>›</button><input aria-label="Odaberite datum rasporeda" type="date" min={todayCalendarDate} value={selectedCalendarDate} onChange={event=>void requestCalendarDate(event.target.value)}/></div></div><p className={`working-hours-label ${workingHours?'':'closed'}`}>{workingHoursLabel}</p><p className="schedule-hint">Radno vrijeme označeno je toplom pozadinom; termini izvan njega i dalje su dopušteni.</p><div className="calendar-scroll"><div className="day-calendar"><div className="calendar-time-axis" aria-hidden="true">{calendarMarks.map(mark=><span className={mark.isHour?'hour':'half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}>{mark.label}</span>)}</div><div className={`calendar-grid ${workingHours?'has-working-hours':'closed-day'}`} onClick={openCalendarSlot}>{workingHours&&<span className="working-hours-band" aria-hidden="true" style={{top:`${workingHours.topPercent}%`,height:`${workingHours.heightPercent}%`}}/>}{calendarMarks.map(mark=><span className={mark.isHour?'calendar-line hour':'calendar-line half-hour'} style={{top:`${mark.topPercent}%`}} key={mark.label}/>)}{selectedAdminRequest&&requestDraftLayout?.visible&&<div ref={requestDraftRef} data-request-id={selectedAdminRequest.id} className={`request-draft-event ${requestDraftConflicts.length?'has-conflict':''}`} style={{top:`${requestDraftLayout.topPercent}%`,height:`max(${requestDraftLayout.heightPercent}%, 52px)`}} onPointerDown={event=>{if((event.target as HTMLElement).closest('button'))return;event.currentTarget.setPointerCapture(event.pointerId)}} onPointerMove={event=>{if(!event.currentTarget.hasPointerCapture(event.pointerId))return;const grid=event.currentTarget.parentElement?.getBoundingClientRect();if(grid)setRequestDraftTime(timeFromCalendarPosition(event.clientY-grid.top,grid.height))}} onPointerUp={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}} onClick={event=>event.stopPropagation()}><div className="request-draft-time"><strong>{requestDraftTime}–{minutesToTime(timeToMinutes(requestDraftTime)+requestDraftDuration)}</strong><span>{requestDraftDuration} min</span></div><div className="request-draft-summary"><strong>{selectedAdminRequest.clientName}</strong>{selectedAdminRequest.treatments.length?<ul>{selectedAdminRequest.treatments.map(item=><li key={item.serviceId}>{item.name} · {item.durationMinutes} min</li>)}</ul>:<span>Bez odabrane usluge</span>}{(selectedAdminRequest.clientReply||selectedAdminRequest.message)&&<small>{selectedAdminRequest.clientReply?`Nova želja klijenta: ${selectedAdminRequest.clientReply}`:selectedAdminRequest.message}</small>}</div><div className="request-draft-controls">{requestDraftConflicts.length>0&&<em>Preklapanje s {requestDraftConflicts.length} {requestDraftConflicts.length===1?'terminom':'termina'} je dopušteno</em>}<button type="button" disabled={inboxBusy} onClick={()=>void sendSelectedRequestProposal()}>{inboxBusy?'Slanje…':'Pošalji prijedlog termina'}</button><button type="button" className="request-draft-close" aria-label="Zatvori probni termin" onClick={()=>{setSelectedAdminRequest(undefined);setRequestDraftTime('')}}>×</button></div></div>}{calendarAppointments.map((item,index)=>{const catalogDuration=serviceCatalog.find(service=>service.id===item.serviceId)?.durationMinutes;const layout=calendarEventLayout(item.dateTime,item.serviceDuration??catalogDuration);if(!layout.visible)return null;const overlap=calendarOverlapDepth(calendarAppointments,index);const start=item.dateTime.slice(11,16);const end=minutesToTime(timeToMinutes(start)+layout.displayDuration);const pending=item.confirmationStatus==='pending';const zIndex=1000-Math.max(1,layout.displayDuration);return <button type="button" data-appointment-id={item.id} className={`calendar-event ${item.status} ${item.noCharge?'no-charge':''} ${pending?'pending-confirmation':''} ${overlap.overlaps?'has-overlap':''} ${overlap.depth>0?'overlap-top':''}`} style={{top:`${layout.topPercent}%`,height:`max(${layout.heightPercent}%, 34px)`,left:`${8+Math.min(overlap.depth,3)*12}px`,zIndex}} key={item.id} onClick={event=>{event.stopPropagation();queueAppointmentReschedule(item)}} onDoubleClick={event=>{event.stopPropagation();openAppointmentDetailsFromCalendar(item)}}><time>{start}–{end}</time><strong>{findClientName(data.clients,item.clientId)}</strong><span>{item.service||'Termin bez tretmana'}</span><small>{pending?'Čeka potvrdu':item.noCharge?'Gratis':appointmentStatusLabel(item.status)}</small></button>})}</div></div></div></section>}
       {view === 'klijenti' && <section className="panel"><div className="panel-head stack-mobile"><div><p className="eyebrow">KARTOTEKA</p><h2>Moji klijenti</h2></div><div className="toolbar"><input aria-label="Pretraži klijente" placeholder="Pretraži ime ili telefon…" value={query} onChange={e => setQuery(e.target.value)} /><button className="primary" onClick={() => {setNewClientPin('');setClientForm(emptyClient())}}>+ Novi klijent</button></div></div>
         <div className="client-grid">{filteredClients.map(client => { const portalStatus=portalStatuses[client.id];const portalActive=portalStatus?.activated===true;const clientUnreadMessages=adminMessages.filter(item=>item.clientId===client.id&&item.sender==='client'&&!item.read&&!item.archivedAt).length;const clientNewRequests=adminRequests.filter(item=>item.clientId===client.id&&item.status==='pending'&&!item.readAt).length;const nextAppointment=data.appointments.filter(item=>item.clientId===client.id&&item.status==='zakazan'&&new Date(item.dateTime).getTime()>=Date.now()).sort((left,right)=>left.dateTime.localeCompare(right.dateTime))[0];return <article className="client-card clickable" role="button" tabIndex={0} key={client.id} onClick={()=>void openClientCard(client)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void openClientCard(client)}}}>{client.photo ? <img src={client.photo.thumb} alt="" /> : <span className="avatar">{client.firstName[0]}{client.lastName[0]}</span>}<div><h3>{client.lastName}, {client.firstName}</h3><a href={`tel:${client.phone}`} onClick={event=>event.stopPropagation()}>{client.phone}</a>{(clientUnreadMessages>0||clientNewRequests>0)&&<div className="client-alerts">{clientUnreadMessages>0&&<span>{clientUnreadMessages} novih poruka</span>}{clientNewRequests>0&&<span>{clientNewRequests} novih zahtjeva</span>}</div>}<small className={portalActive?'portal-row-active':'portal-row-inactive'}>{portalActive?'Portal aktivan':'Portal nije aktiviran'}</small></div><div className="client-next-appointment"><small>Sljedeći termin</small>{nextAppointment?<><strong>{formatDateTime(nextAppointment.dateTime)}</strong><span>{nextAppointment.service}</span></>:<span>Nema budućeg termina</span>}</div></article> })}</div></section>}
       {view === 'cjenik' && <section className="panel price-panel"><div className="panel-head"><div><p className="eyebrow">USLUGE I CIJENE</p><h2>Cjenik</h2></div><button className="secondary compact-action" onClick={() => setCategoryForm({id:'',name:'',isActive:true,displayOrder:categoryCatalog.length+1})}>+ Kategorija</button></div><div className="admin-price-accordion">{orderedCategories(categoryCatalog).map(category=>{const open=openPriceCategoryId===category.id;const categoryServices=orderedServices(serviceCatalog.filter(item=>item.categoryId===category.id));return <article className={`admin-price-category ${open?'open':''}`} key={category.id}><div className="admin-category-row"><button className="category-toggle" type="button" aria-expanded={open} onClick={()=>setOpenPriceCategoryId(open?'':category.id)}><span className="category-chevron" aria-hidden="true">›</span><span><strong>{category.name}</strong><small>{categoryServices.length} {categoryServices.length===1?'stavka':'stavki'} · {category.isActive?'Aktivna':'Neaktivna'}</small></span></button><button className="link compact-edit" type="button" onClick={()=>setCategoryForm(category)}>Uredi</button></div>{open&&<div className="admin-category-items">{categoryServices.map(item=><div className="admin-price-row" key={item.id}><div><span>{item.name}</span><small>{item.durationMinutes?`${item.durationMinutes} min`:'Trajanje nije uneseno'} · {item.isActive?'Aktivna':'Neaktivna'} · {item.isBookable?'Za termin':'Dodatak'}</small></div><strong>{item.price.toLocaleString('hr-HR',{style:'currency',currency:'EUR'})}</strong><button className="link compact-edit" type="button" onClick={()=>setServiceForm(item)}>Uredi</button></div>)}<button className="link add-category-service" type="button" onClick={()=>setServiceForm({id:'',categoryId:category.id,categoryName:category.name,name:'',price:0,isActive:true,isBookable:true,displayOrder:categoryServices.length+1})}>+ Dodaj uslugu</button></div>}</article>})}</div></section>}
@@ -1631,3 +1706,4 @@ function TimePicker({date,value,service,appointments,clients,editingId,allowOver
 function ClientMiniAvatar({client}:{client:Client}){return client.photo?<img className="client-mini-avatar" src={client.photo.thumb} alt=""/>:<span className="client-mini-avatar initials">{client.firstName[0]}{client.lastName[0]}</span>}
 function FormActions({onCancel,disabled=false,submitting=false}:{onCancel:()=>void;disabled?:boolean;submitting?:boolean}){return <div className="form-actions"><button type="button" className="secondary" disabled={submitting} onClick={onCancel}>Odustani</button><button className="primary" type="submit" disabled={disabled}>{submitting?'Spremanje…':'Spremi'}</button></div>}
 export default AdminApp
+

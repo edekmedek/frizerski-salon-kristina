@@ -29,10 +29,23 @@ export function AdminChatView({ messages, selected, busy, clients, onOpen, onRep
     if (!current || current.createdAt < message.createdAt) latest.set(message.clientId, message)
     return latest
   }, new Map<string, AdminMessage>()).values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const unreadByClientId = active.reduce((counts, message) => {
+    if (message.sender === 'client' && !message.read) {
+      counts.set(message.clientId, (counts.get(message.clientId) ?? 0) + 1)
+    }
+    return counts
+  }, new Map<string, number>())
+  const unreadConversations = conversations.filter(item => (unreadByClientId.get(item.clientId) ?? 0) > 0)
+  const readConversations = conversations.filter(item => (unreadByClientId.get(item.clientId) ?? 0) === 0)
   const conversation = selected
     ? active.filter(item => item.clientId === selected.clientId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     : []
   const lastMessageId = conversation.at(-1)?.id ?? ''
+
+  const renderConversationButton = (latest: AdminMessage) => {
+    const unread = unreadByClientId.get(latest.clientId) ?? 0
+    return <button className={unread ? 'unread' : ''} type="button" key={latest.clientId} onClick={() => void onOpen(latest)}><span className="chat-avatar">{latest.clientName.slice(0, 1).toUpperCase()}</span><span className="chat-conversation-copy"><strong>{latest.clientName}</strong><small>{latest.sender === 'admin' ? 'Vi: ' : ''}{latest.message}</small></span><span className="chat-conversation-meta"><small>{formatDateTime(latest.createdAt)}</small>{unread > 0 && <b>{unread}</b>}</span></button>
+  }
 
   useLayoutEffect(() => {
     const thread = threadRef.current
@@ -74,8 +87,15 @@ export function AdminChatView({ messages, selected, busy, clients, onOpen, onRep
       <label>Poruka<textarea required rows={3} value={newMessage} onChange={event=>setNewMessage(event.target.value)} placeholder="Napiši poruku…"/></label>
       <button className="primary" disabled={busy || !newClientId || !newMessage.trim()} type="submit">Pošalji</button>
     </form>}
-    <div className="chat-conversation-list">
-    {conversations.map(latest => { const unread = active.filter(item => item.clientId === latest.clientId && item.sender === 'client' && !item.read).length; return <button className={unread ? 'unread' : ''} type="button" key={latest.clientId} onClick={() => void onOpen(latest)}><span className="chat-avatar">{latest.clientName.slice(0, 1).toUpperCase()}</span><span className="chat-conversation-copy"><strong>{latest.clientName}</strong><small>{latest.sender === 'admin' ? 'Vi: ' : ''}{latest.message}</small></span><span className="chat-conversation-meta"><small>{formatDateTime(latest.createdAt)}</small>{unread > 0 && <b>{unread}</b>}</span></button> })}
-    {!conversations.length && <p className="empty-state">Još nema poruka.</p>}
-  </div></section>
+    <div className="chat-conversation-sections">
+      {unreadConversations.length > 0 && <section className="chat-conversation-group unread-group">
+        <header><h3>Nepročitane poruke</h3><b>{unreadConversations.length}</b></header>
+        <div className="chat-conversation-list">{unreadConversations.map(renderConversationButton)}</div>
+      </section>}
+      <section className="chat-conversation-group">
+        <header><h3>Sve ostale poruke</h3></header>
+        <div className="chat-conversation-list">{readConversations.map(renderConversationButton)}</div>
+      </section>
+      {!conversations.length && <p className="empty-state">Još nema poruka.</p>}
+    </div></section>
 }
