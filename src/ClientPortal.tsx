@@ -6,6 +6,7 @@ import { pushErrorMessage, SALON_VAPID_PUBLIC_KEY } from './lib/pushNotification
 import { countClientUnreadMessages, subscribeToAppForeground, updateAppBadge } from './lib/appBadge'
 import { closeReadClientMessageNotifications, isClientMessagesLocation, isClientNotificationsLocation, registerSalonPushWorker } from './lib/clientPush'
 import { detectNotificationPlatform, getLastSuccessfulPushTest, saveLastSuccessfulPushTest } from './lib/notificationSetup'
+import { startSupabaseRefreshLoop, trackSupabaseCall } from './lib/supabaseTrafficGuard'
 import './Portal.css'
 
 type Section = 'home' | 'request' | 'appointments' | 'prices' | 'messages' | 'photos' | 'notifications'
@@ -203,6 +204,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
     async function load() {
       const supabaseClient = supabase
       if (!supabaseClient) return
+      trackSupabaseCall('client.initialLoad')
       const [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult, pricesResult, bookableResult] = await Promise.all([
         supabaseClient.from('clients').select('id,first_name,last_name').eq('id', clientId).maybeSingle(),
         supabaseClient.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status,confirmation_status').eq('client_id', clientId),
@@ -302,13 +304,18 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   useEffect(() => {
     const supabaseClient = supabase
     if (!supabaseClient) return
+    let refreshInFlight: Promise<boolean> | null = null
+    let queuedRefresh = false
     async function refreshRequestsAndAppointments() {
-      if (!supabase) return
+      if (!supabase) return true
+      if (document.visibilityState !== 'visible') return true
+      trackSupabaseCall('client.refreshRequestsAndAppointments')
       const [requestResult, appointmentResult, messageResult] = await Promise.all([
         supabase.from('client_requests').select('id,kind,service,preferred_dates,day_period,client_message,status,admin_reply,client_reply,proposed_starts_at,proposed_duration_minutes,appointment_id,created_at,updated_at').eq('client_id', clientId),
         supabase.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status,confirmation_status').eq('client_id', clientId),
         supabase.from('messages').select('id,sender,subject,message,is_read,read_at,client_read_at,created_at').eq('client_id', clientId).eq('deleted_by_client', false).order('created_at', { ascending: false }),
       ])
+      const success = !requestResult.error && !appointmentResult.error && !messageResult.error
       if (!requestResult.error) {
         const nextRequests = (requestResult.data ?? []) as RequestRow[]
         const hasNewProposal = nextRequests.some(item =>
@@ -336,20 +343,43 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
           window.setTimeout(() => setHighlightedMessageIds([]), 8000)
         }
       }
+      return success
+    }
+    const requestRefresh = () => {
+      queuedRefresh = true
+      if (refreshInFlight) return refreshInFlight
+      refreshInFlight = (async () => {
+        let success = true
+        while (queuedRefresh) {
+          queuedRefresh = false
+          const next = await refreshRequestsAndAppointments()
+          success = success && next
+        }
+        return success
+      })().finally(() => {
+        refreshInFlight = null
+      })
+      return refreshInFlight
     }
     const channel = supabaseClient
       .channel(`client-requests-${clientId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'client_requests', filter: `client_id=eq.${clientId}` }, () => {
-        void refreshRequestsAndAppointments()
+        void requestRefresh()
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `client_id=eq.${clientId}` }, () => {
-        void refreshRequestsAndAppointments()
+        void requestRefresh()
       })
       .subscribe()
-    const unsubscribeForeground = subscribeToAppForeground(() => void refreshRequestsAndAppointments())
-    const poll = window.setInterval(() => void refreshRequestsAndAppointments(), 3000)
+    const unsubscribeForeground = subscribeToAppForeground(() => { void requestRefresh() })
+    const stopRefreshLoop = startSupabaseRefreshLoop({
+      label: 'client.refreshLoop',
+      refresh: () => requestRefresh(),
+      baseIntervalMs: 60_000,
+      hiddenIntervalMs: 5 * 60_000,
+      maxBackoffMs: 15 * 60_000,
+    })
     return () => {
-      window.clearInterval(poll)
+      stopRefreshLoop()
       unsubscribeForeground()
       void supabaseClient.removeChannel(channel)
     }

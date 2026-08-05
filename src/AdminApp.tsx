@@ -30,11 +30,12 @@ import { mapSupabaseAppointments, type SupabaseAppointmentRow, type SupabaseAppo
 import { updateAppBadge } from './lib/appBadge'
 import { useAutoDismissNotice } from './lib/useAutoDismissNotice'
 import { parseClientPushResult, savedMessagePushNotice, type ClientPushOutcome } from './lib/clientPush'
+import { startSupabaseRefreshLoop, trackSupabaseCall } from './lib/supabaseTrafficGuard'
 import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import { doorbellService } from './lib/doorbellService'
 import { COMPANION_UNAVAILABLE_MESSAGE, isSupportedSalonTablet, openSalonDoorCompanion } from './lib/tapoApp'
-import { consumeBoilerResult, readCachedBoilerState, requestBoilerCommand, type BoilerCommand, type BoilerState } from './lib/boilerApp'
+import { claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, requestBoilerCommand, supportsAutomaticBoilerStatus, type BoilerCommand, type BoilerState } from './lib/boilerApp'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -113,6 +114,7 @@ function emptyAppointment(appointments:Appointment[]):Appointment{
 function AdminApp({ onLogout }: { onLogout: () => void }) {
   const initialAdminPinFields = createEmptyAdminPinFields()
   const [initialBoilerResult] = useState(() => consumeBoilerResult())
+  const [initialBoilerResume] = useState(() => consumeBoilerResumeSignal())
   const [boilerState, setBoilerState] = useState<BoilerState>(() => {
     const result = initialBoilerResult?.result
     return result === 'on' || result === 'off' ? result : readCachedBoilerState()
@@ -183,6 +185,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const imageFiles = useRef<{ before?: File; after?: File }>({})
   const previousNoChargeRef = useRef(false)
   const priceBeforeNoChargeRef = useRef<{ appointmentId: string; price: number; manual: boolean } | null>(null)
+  const boilerBusyRef = useRef(false)
   useAutoDismissNotice(notice, setNotice)
 
   useEffect(() => {
@@ -252,12 +255,54 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     setNotice('Brava još nije povezana.')
   }
   function runBoilerCommand(command: BoilerCommand) {
-    if (boilerBusy) return
+    if (boilerBusyRef.current) return
+    boilerBusyRef.current = true
     setBoilerBusy(true)
     setBoilerOperation(command)
     setBoilerState('unknown')
     requestBoilerCommand(command)
   }
+
+  useEffect(() => { boilerBusyRef.current = boilerBusy }, [boilerBusy])
+
+  useEffect(() => {
+    if (!supportsAutomaticBoilerStatus()) return
+    let debounceTimer = 0
+    const scheduleStatus = () => {
+      if (document.visibilityState !== 'visible') return
+      window.clearTimeout(debounceTimer)
+      debounceTimer = window.setTimeout(() => {
+        if (boilerBusyRef.current || !claimAutomaticBoilerStatus()) return
+        runBoilerCommand('status')
+      }, 600)
+    }
+    window.addEventListener('focus', scheduleStatus)
+    window.addEventListener('pageshow', scheduleStatus)
+    document.addEventListener('visibilitychange', scheduleStatus)
+    return () => {
+      window.clearTimeout(debounceTimer)
+      window.removeEventListener('focus', scheduleStatus)
+      window.removeEventListener('pageshow', scheduleStatus)
+      document.removeEventListener('visibilitychange', scheduleStatus)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!initialBoilerResult || !supportsAutomaticBoilerStatus()
+      || !consumeAutomaticBoilerRetry(initialBoilerResult.result)) return
+    const retryTimer = window.setTimeout(() => {
+      if (!boilerBusyRef.current) runBoilerCommand('status')
+    }, 1_500)
+    return () => window.clearTimeout(retryTimer)
+  }, [initialBoilerResult])
+
+  useEffect(() => {
+    if (!initialBoilerResume || !supportsAutomaticBoilerStatus()) return
+    const resumeTimer = window.setTimeout(() => {
+      if (!boilerBusyRef.current && claimAutomaticBoilerStatus()) runBoilerCommand('status')
+    }, 600)
+    return () => window.clearTimeout(resumeTimer)
+  }, [initialBoilerResume])
   const filteredClients = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('hr')
     return data.clients
@@ -600,6 +645,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
   async function loadAdminInbox(notifyAboutNewRequests = false) {
     if (!supabase) return false
+    trackSupabaseCall('admin.loadAdminInbox')
     const [requestResult, requestServiceResult, messageResult] = await Promise.all([
       supabase.rpc('admin_list_client_request_inbox'),
       supabase.from('client_request_services').select('request_id,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,display_order').order('display_order'),
@@ -630,6 +676,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
   async function loadAdminAppointments() {
     if (!supabase) return false
+    trackSupabaseCall('admin.loadAdminAppointments')
     const [appointmentResult, treatmentResult] = await Promise.all([
       supabase.from('appointments').select('id,client_id,starts_at,service,status,confirmation_status,notes,created_at,updated_at,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,total_price_snapshot,total_duration_minutes,no_charge'),
       supabase.from('appointment_services').select('appointment_id,service_id,service_name_snapshot,service_price_snapshot,service_duration_snapshot,display_order').order('display_order'),
@@ -662,31 +709,56 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     const supabaseClient = supabase
     if (!supabaseClient) return
+    let refreshInFlight: Promise<boolean> | null = null
+    let queuedNotify = false
     const refreshAll = (notify = true) => {
-      void loadAdminInbox(notify)
-      void loadAdminAppointments()
+      queuedNotify = queuedNotify || notify
+      if (refreshInFlight) return refreshInFlight
+      refreshInFlight = (async () => {
+        let success = true
+        while (queuedNotify) {
+          const notifyNow = queuedNotify
+          queuedNotify = false
+          if (document.visibilityState !== 'visible') continue
+          trackSupabaseCall('admin.refreshAll')
+          const [inboxOk, appointmentsOk] = await Promise.all([loadAdminInbox(notifyNow), loadAdminAppointments()])
+          success = success && inboxOk && appointmentsOk
+        }
+        return success
+      })().finally(() => {
+        refreshInFlight = null
+      })
+      return refreshInFlight
     }
     const channel = supabaseClient
       .channel('admin-client-requests')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'client_requests' }, () => {
-        refreshAll(true)
+        void refreshAll(true)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-        void loadAdminAppointments()
+        void refreshAll(true)
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-        void loadAdminInbox(true)
+        void refreshAll(true)
       })
       .subscribe()
-    const refreshOnFocus = () => refreshAll(true)
+    const refreshOnFocus = () => { void refreshAll(true) }
     window.addEventListener('focus', refreshOnFocus)
     const refreshOnVisibility = () => {
-      if (document.visibilityState === 'visible') refreshAll(true)
+      if (document.visibilityState === 'visible') void refreshAll(true)
     }
     document.addEventListener('visibilitychange', refreshOnVisibility)
-    const poll = window.setInterval(() => refreshAll(true), 3000)
+    const stopRefreshLoop = startSupabaseRefreshLoop({
+      label: 'admin.refreshLoop',
+      refresh: async () => {
+        return refreshAll(true)
+      },
+      baseIntervalMs: 60_000,
+      hiddenIntervalMs: 5 * 60_000,
+      maxBackoffMs: 15 * 60_000,
+    })
     return () => {
-      window.clearInterval(poll)
+      stopRefreshLoop()
       window.removeEventListener('focus', refreshOnFocus)
       document.removeEventListener('visibilitychange', refreshOnVisibility)
       void supabaseClient.removeChannel(channel)
