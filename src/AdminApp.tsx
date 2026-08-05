@@ -299,11 +299,23 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   }, [appointmentForm])
   function update(next: SalonData, message?: string) { setData(next); saveSalonData(next); if (message) setNotice(message) }
   function changeView(next: View) {
+    if (next === 'poruke') next = 'poruke-live'
+    if (next === 'zahtjevi') next = 'zahtjevi-live'
     if (next === 'cjenik') setOpenPriceCategoryId('')
     if (next === 'poruke-live') setSelectedAdminMessage(undefined)
     if (next === 'zahtjevi-live') setSelectedAdminRequest(undefined)
     setView(next)
   }
+
+  useEffect(() => {
+    if (view === 'poruke') {
+      setView('poruke-live')
+      return
+    }
+    if (view === 'zahtjevi') {
+      setView('zahtjevi-live')
+    }
+  }, [view])
   function openVideoDoorbell() {
     openSalonDoorCompanion({
       onUnavailable: () => setNotice(COMPANION_UNAVAILABLE_MESSAGE),
