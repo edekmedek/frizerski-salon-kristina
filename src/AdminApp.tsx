@@ -312,7 +312,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     })
   }
   function showDoorLockUnavailable() {
-    setNotice('Brava još nije povezana.')
+    window.location.href = 'salonkristina://nuki/unlock'
   }
   function runBoilerCommand(command: BoilerCommand) {
     if (boilerBusyRef.current) return
@@ -1557,7 +1557,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         </button>
       </div>
       <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>
-      <button className="door-open-placeholder" type="button" aria-disabled="true" onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
+      <button className="door-open-placeholder" type="button" onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
     </div>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>

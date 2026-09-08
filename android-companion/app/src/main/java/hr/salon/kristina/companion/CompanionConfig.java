@@ -42,11 +42,16 @@ public final class CompanionConfig {
     public static final String DEEP_LINK_SCHEME = "salonkristina";
     public static final String DEEP_LINK_HOST = "door";
     public static final String BOILER_DEEP_LINK_HOST = "boiler";
+    public static final String NUKI_DEEP_LINK_HOST = "nuki";
     public static final String PATH_LIVE = "/live";
     public static final String PATH_OPEN = "/open";
     public static final String PATH_RETURN = "/return";
     public static final String PATH_STATUS = "/status";
     public static final String PATH_ERROR = "/error";
+    public static final String NUKI_PATH_LOCK = "/lock";
+    public static final String NUKI_PATH_UNLOCK = "/unlock";
+    public static final long NUKI_SCAN_TIMEOUT_MS = 15_000L;
+    public static final long NUKI_OPERATION_TIMEOUT_MS = 30_000L;
     public static final String BOILER_DEVICE_NAME = "Bojler u salonu";
     public static final String BOILER_CARD_ID = TAPO_PACKAGE + ":id/content";
     public static final String BOILER_SWITCH_ID = TAPO_PACKAGE + ":id/device_switch";
