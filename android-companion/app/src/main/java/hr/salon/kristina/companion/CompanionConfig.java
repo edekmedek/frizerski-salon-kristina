@@ -20,6 +20,7 @@ public final class CompanionConfig {
     public static final long SEARCH_INTERVAL_MS = 250L;
     public static final long DEVICE_SEARCH_TIMEOUT_MS = 10_000L;
     public static final long LIVE_CONFIRMATION_TIMEOUT_MS = 10_000L;
+    public static final long ACTION_CLICK_LIVE_SETTLE_MS = 1_500L;
     public static final int MAX_CLICK_PARENT_DEPTH = 8;
     public static final long FALLBACK_GESTURE_DURATION_MS = 100L;
 

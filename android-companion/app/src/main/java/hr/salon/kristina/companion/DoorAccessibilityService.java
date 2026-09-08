@@ -73,6 +73,10 @@ public final class DoorAccessibilityService extends AccessibilityService
     private long tapoLaunchedAtMs;
     private long liveTimeoutAtMs;
     private boolean openingFromDoorbell;
+    private Rect cameraCardBounds;
+    private boolean cameraActionClickAccepted;
+    private boolean cameraCardGestureFallbackDispatched;
+    private long cameraActionClickSettleDeadlineMs;
     private WindowManager overlayWindowManager;
     private View returnOverlay;
 
@@ -392,6 +396,10 @@ public final class DoorAccessibilityService extends AccessibilityService
         commandActive = true;
         deviceClicked = false;
         doubleTapDispatched = false;
+        cameraCardBounds = null;
+        cameraActionClickAccepted = false;
+        cameraCardGestureFallbackDispatched = false;
+        cameraActionClickSettleDeadlineMs = 0L;
         boolean tapoForeground = isTapoForeground();
         boolean liveAlreadyOpen = tapoForeground
                 && (isLiveViewClass(lastWindowClass) || isLiveUiVisible());
@@ -501,9 +509,19 @@ public final class DoorAccessibilityService extends AccessibilityService
                     "Tapo Home ready",
                     "elapsedMs=" + elapsedSinceAutomationStart()
                             + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
-            if (clickNodeOrParent(device)) {
+            if (clickNodeOrParent(device, true)) {
                 deviceClicked = true;
+                cameraActionClickAccepted = true;
+                cameraActionClickSettleDeadlineMs = SystemClock.uptimeMillis()
+                        + CompanionConfig.ACTION_CLICK_LIVE_SETTLE_MS;
+                AutomationLog.step(
+                        "ACTION_CLICK accepted",
+                        "settleMs=" + CompanionConfig.ACTION_CLICK_LIVE_SETTLE_MS
+                                + " cardBounds=" + cameraCardBounds.toShortString());
                 beginWaitingForLive("accessibility-action");
+                return;
+            }
+            if (dispatchCameraCardGestureFallback("ACTION_CLICK returned false")) {
                 return;
             }
             if (useCoordinateFallback("ACTION_CLICK returned false")) {
@@ -534,6 +552,20 @@ public final class DoorAccessibilityService extends AccessibilityService
         }
         if (isLiveUiVisible()) {
             confirmLiveView("live-ui-elements");
+            return;
+        }
+        if (cameraActionClickAccepted
+                && !cameraCardGestureFallbackDispatched
+                && SystemClock.uptimeMillis() >= cameraActionClickSettleDeadlineMs
+                && isTapoForeground()
+                && isTapoMainActivity(lastWindowClass)) {
+            AutomationLog.step(
+                    "Live not opened after ACTION_CLICK",
+                    "class=" + lastWindowClass
+                            + " settleMs=" + CompanionConfig.ACTION_CLICK_LIVE_SETTLE_MS);
+            if (!dispatchCameraCardGestureFallback("ACTION_CLICK false positive")) {
+                fail("Camera card gesture fallback could not be dispatched");
+            }
             return;
         }
         if (SystemClock.uptimeMillis() >= phaseDeadlineMs) {
@@ -662,6 +694,12 @@ public final class DoorAccessibilityService extends AccessibilityService
     }
 
     private boolean clickNodeOrParent(AccessibilityNodeInfo node) {
+        return clickNodeOrParent(node, false);
+    }
+
+    private boolean clickNodeOrParent(
+            AccessibilityNodeInfo node,
+            boolean rememberCameraCardBounds) {
         AccessibilityNodeInfo candidate = node;
         for (int depth = 0;
              candidate != null && depth < CompanionConfig.MAX_CLICK_PARENT_DEPTH;
@@ -676,6 +714,11 @@ public final class DoorAccessibilityService extends AccessibilityService
                             + " bounds=" + nodeBounds(candidate));
             if (candidate.isClickable() && candidate.isEnabled()
                     && isFullyOnScreen(candidate)) {
+                if (rememberCameraCardBounds) {
+                    Rect bounds = new Rect();
+                    candidate.getBoundsInScreen(bounds);
+                    cameraCardBounds = bounds;
+                }
                 AutomationLog.step(
                         "Clickable parent found",
                         "depth=" + depth
@@ -690,6 +733,52 @@ public final class DoorAccessibilityService extends AccessibilityService
         AutomationLog.step("Clickable parent found", "success=false");
         AutomationLog.step("ACTION_CLICK result", "success=false reason=no-clickable-parent");
         return false;
+    }
+
+    private boolean dispatchCameraCardGestureFallback(String reason) {
+        if (cameraCardGestureFallbackDispatched
+                || cameraCardBounds == null
+                || cameraCardBounds.isEmpty()) {
+            return false;
+        }
+        final float centerX = cameraCardBounds.exactCenterX();
+        final float centerY = cameraCardBounds.exactCenterY();
+        Path path = new Path();
+        path.moveTo(centerX, centerY);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(
+                        path, 0, CompanionConfig.FALLBACK_GESTURE_DURATION_MS))
+                .build();
+        cameraCardGestureFallbackDispatched = true;
+        AutomationLog.step(
+                "Gesture fallback dispatched",
+                "reason=" + reason
+                        + " cardBounds=" + cameraCardBounds.toShortString()
+                        + " center=" + centerX + "," + centerY);
+        boolean accepted = dispatchGesture(
+                gesture,
+                new GestureResultCallback() {
+                    @Override
+                    public void onCompleted(GestureDescription gestureDescription) {
+                        AutomationLog.step("Gesture fallback result", "completed=true");
+                    }
+
+                    @Override
+                    public void onCancelled(GestureDescription gestureDescription) {
+                        AutomationLog.error(
+                                "Gesture fallback result",
+                                "completed=false reason=cancelled",
+                                null);
+                    }
+                },
+                null);
+        AutomationLog.step("Gesture fallback result", "accepted=" + accepted);
+        if (!accepted) {
+            return false;
+        }
+        deviceClicked = true;
+        beginWaitingForLive("camera-card-gesture-fallback");
+        return true;
     }
 
     private boolean useCoordinateFallback(String reason) {
@@ -865,6 +954,10 @@ public final class DoorAccessibilityService extends AccessibilityService
         return className.contains("TapoPadVideoPlayV3Activity");
     }
 
+    private boolean isTapoMainActivity(String className) {
+        return className.endsWith(".view.main.MainActivity");
+    }
+
     private boolean isActivityClass(String className) {
         return className.endsWith("Activity");
     }
@@ -886,6 +979,11 @@ public final class DoorAccessibilityService extends AccessibilityService
                         + " class=" + lastWindowClass
                         + " elapsedMs=" + elapsedSinceAutomationStart()
                         + " sinceTapoLaunchMs=" + elapsedSinceTapoLaunch());
+        if (cameraCardGestureFallbackDispatched) {
+            AutomationLog.step(
+                    "Live confirmed after gesture fallback",
+                    "source=" + source);
+        }
         completeLiveEntry(source);
         scheduleDoubleTap();
     }
@@ -1160,6 +1258,10 @@ public final class DoorAccessibilityService extends AccessibilityService
         phase = Phase.IDLE;
         automationState = AutomationState.IDLE;
         openingFromDoorbell = false;
+        cameraCardBounds = null;
+        cameraActionClickAccepted = false;
+        cameraCardGestureFallbackDispatched = false;
+        cameraActionClickSettleDeadlineMs = 0L;
         handler.removeCallbacksAndMessages(null);
         removeReturnOverlay("Automation cancelled");
     }
