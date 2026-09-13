@@ -1226,7 +1226,7 @@
   }
 
   .app-shell.has-door-controls > main {
-    padding-top: calc(126px + env(safe-area-inset-top));
+    padding-top: calc(108px + env(safe-area-inset-top));
   }
 
   .app-shell.has-door-controls .boiler-control,
@@ -1247,8 +1247,9 @@
   .app-shell.has-door-controls .door-open-placeholder {
     overflow: hidden;
     width: 100%;
-    padding: 4px 5px;
+    padding: 3px 4px;
     font-size: 10px;
+    line-height: 1.1;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1266,11 +1267,12 @@
     grid-column: 1 / -1;
     align-items: flex-start;
     min-width: 0;
-    padding: 2px 4px 0;
+    padding: 0 4px;
     font-size: .8rem;
   }
 
   .app-shell.has-door-controls .nuki-state small {
+    line-height: 1.1;
     white-space: nowrap;
   }
 }
