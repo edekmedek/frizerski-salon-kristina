@@ -18,6 +18,9 @@ public final class DoorCommandActivity extends Activity {
     private TextView nukiStatusView;
     private EditText nukiPinView;
     private NukiBleController nukiController;
+    private TextView gatewayStatusView;
+    private EditText gatewayEmailView;
+    private EditText gatewayPasswordView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -137,6 +140,45 @@ public final class DoorCommandActivity extends Activity {
         });
         layout.addView(clearNuki, matchWrap());
 
+        TextView gatewayTitle = new TextView(this);
+        gatewayTitle.setText("Supabase hardware gateway");
+        gatewayTitle.setTextSize(18);
+        LinearLayout.LayoutParams gatewayTitleParams = matchWrap();
+        gatewayTitleParams.topMargin = padding;
+        layout.addView(gatewayTitle, gatewayTitleParams);
+
+        gatewayStatusView = new TextView(this);
+        gatewayStatusView.setText(HardwareGatewayStore.hasSession(this)
+                ? (HardwareGatewayStore.isEnabled(this) ? "Gateway je konfiguriran i uključen." : "Gateway je konfiguriran, ali isključen.")
+                : "Gateway račun nije konfiguriran.");
+        layout.addView(gatewayStatusView, matchWrap());
+
+        gatewayEmailView = new EditText(this);
+        gatewayEmailView.setHint("E-mail zasebnog gateway računa");
+        gatewayEmailView.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        layout.addView(gatewayEmailView, matchWrap());
+
+        gatewayPasswordView = new EditText(this);
+        gatewayPasswordView.setHint("Lozinka gateway računa");
+        gatewayPasswordView.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        layout.addView(gatewayPasswordView, matchWrap());
+
+        Button enableGateway = new Button(this);
+        enableGateway.setText("Prijavi i uključi gateway");
+        enableGateway.setOnClickListener(view -> configureGateway());
+        layout.addView(enableGateway, matchWrap());
+
+        Button disableGateway = new Button(this);
+        disableGateway.setText("Isključi gateway");
+        disableGateway.setOnClickListener(view -> {
+            HardwareGatewayStore.setEnabled(this, false);
+            HardwareGatewayService.stop(this);
+            gatewayStatusView.setText("Gateway je isključen; spremljena sesija je sačuvana.");
+        });
+        layout.addView(disableGateway, matchWrap());
+
         Button accessibilitySettingsButton = new Button(this);
         accessibilitySettingsButton.setText("Otvori postavke pristupačnosti");
         accessibilitySettingsButton.setOnClickListener(view ->
@@ -174,6 +216,31 @@ public final class DoorCommandActivity extends Activity {
         nukiStatusView.setText("Tražim Nuki u načinu uparivanja…");
         nukiController.pair(pin);
         nukiPinView.setText("");
+    }
+
+    private void configureGateway() {
+        String email = gatewayEmailView.getText().toString().trim();
+        String password = gatewayPasswordView.getText().toString();
+        gatewayPasswordView.setText("");
+        if (email.isEmpty() || password.isEmpty()) {
+            gatewayStatusView.setText("Unesite gateway e-mail i lozinku.");
+            return;
+        }
+        gatewayStatusView.setText("Prijava gateway računa…");
+        new Thread(() -> {
+            try {
+                new HardwareGatewayClient(this).signIn(email, password);
+                HardwareGatewayStore.setEnabled(this, true);
+                runOnUiThread(() -> {
+                    HardwareGatewayService.start(this);
+                    gatewayEmailView.setText("");
+                    gatewayStatusView.setText("Gateway je konfiguriran i uključen.");
+                });
+            } catch (Exception error) {
+                AutomationLog.error("Gateway sign-in", error.getMessage(), error);
+                runOnUiThread(() -> gatewayStatusView.setText("Gateway prijava nije uspjela: " + error.getMessage()));
+            }
+        }, "salon-gateway-sign-in").start();
     }
 
     private void executeNukiTest(NukiCommand command) {

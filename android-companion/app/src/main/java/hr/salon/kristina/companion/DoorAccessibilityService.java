@@ -305,6 +305,7 @@ public final class DoorAccessibilityService extends AccessibilityService
     public void executeBoilerCommand(BoilerCommand command) {
         if (commandActive || automationState != AutomationState.IDLE
                 || isReturnActive(this)) {
+            GatewayExecutionReporter.report("boiler", "error", "busy");
             launchSalonWithBoilerResult(this, "error", "busy");
             return;
         }
@@ -378,6 +379,7 @@ public final class DoorAccessibilityService extends AccessibilityService
             String detail,
             long elapsedMs,
             boolean clicked) {
+        GatewayExecutionReporter.report("boiler", result, detail);
         launchSalonWithBoilerResult(this, result, detail, elapsedMs, clicked);
     }
 
@@ -1011,6 +1013,7 @@ public final class DoorAccessibilityService extends AccessibilityService
     private void completeLiveEntry(String source) {
         phase = Phase.LIVE_CONFIRMED;
         automationState = AutomationState.LIVE;
+        GatewayExecutionReporter.report("camera", "live", source);
         handler.removeCallbacks(automationRunnable);
         showReturnOverlay();
         AutomationLog.step("LIVE_READY", "source=" + source);
@@ -1214,6 +1217,7 @@ public final class DoorAccessibilityService extends AccessibilityService
     }
 
     private void fail(String message) {
+        GatewayExecutionReporter.report("camera", "error", message);
         AutomationLog.error("Automation failed", message, null);
         boolean activeFailure = commandActive || isReturnActive(this);
         automationState = AutomationState.RETURNING;

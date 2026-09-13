@@ -207,7 +207,7 @@ public final class NukiBleController {
                         + " rssi=" + result.getRssi()
                         + " scanRecord=" + record
                         + " serviceUuids=" + (record == null ? null : record.getServiceUuids())
-                        + " solicitationUuids=" + (record == null
+                        + " solicitationUuids=" + (record == null || android.os.Build.VERSION.SDK_INT < 29
                         ? null : record.getServiceSolicitationUuids())
                         + " manufacturerData=" + manufacturerData
                         + " serviceData=" + serviceData

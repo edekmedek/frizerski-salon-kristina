@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { BOILER_AUTO_COOLDOWN_MS, boilerDeepLink, boilerIntentLink, claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, supportsAutomaticBoilerStatus } from './boilerApp'
+import { BOILER_AUTO_COOLDOWN_MS, boilerDeepLink, boilerIntentLink, claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, readConfirmedBoilerState, supportsAutomaticBoilerStatus } from './boilerApp'
 
 describe('boiler companion bridge', () => {
   beforeEach(() => sessionStorage.clear())
@@ -55,10 +55,12 @@ describe('boiler companion bridge', () => {
     expect(window.location.search).toBe('')
   })
 
-  it('clears a stale confirmed state for unknown results', () => {
-    localStorage.setItem('salon-boiler-confirmed-state', JSON.stringify({ state: 'off', confirmedAt: Date.now() }))
+  it('preserves the last confirmed state when a later read is unknown', () => {
+    const confirmedAt = Date.now() - 180_000
+    localStorage.setItem('salon-boiler-confirmed-state', JSON.stringify({ state: 'off', confirmedAt }))
     window.history.replaceState({}, '', '/?boiler_result=unknown&boiler_detail=unreadable_state')
     expect(consumeBoilerResult()?.result).toBe('unknown')
+    expect(readConfirmedBoilerState()).toEqual({ state: 'off', confirmedAt })
     expect(readCachedBoilerState()).toBe('unknown')
   })
 })

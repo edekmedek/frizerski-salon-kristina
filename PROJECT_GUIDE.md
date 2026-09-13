@@ -302,7 +302,7 @@ Current confirmed status:
 - Nuki Bluetooth API v2.3.1 authorization succeeds.
 - Encrypted authorization credentials are stored successfully.
 - The authorization record survives a force-stop and cold app restart; the UI reports `Nuki autorizacija je spremljena.`
-- **Actual LOCK/UNLOCK motor movement has NOT yet been tested**, because the lock was loose/off the door. Do not describe motor control as field-confirmed until a controlled physical test is explicitly performed.
+- Actual LOCK and UNLOCK motor movement is confirmed with the lock mounted and calibrated.
 
 ### BLE discovery behavior on the Samsung tablet
 
@@ -358,7 +358,7 @@ After pairing, lock actions connect directly to the stored device address using:
 - keyturner service (`e200`): `a92ee200-5501-11e4-916c-0800200c9a66`;
 - keyturner USDIO characteristic (`e202`): `a92ee202-5501-11e4-916c-0800200c9a66`.
 
-The controller enables indications, requests an encrypted challenge, sends encrypted `LOCK_ACTION` with the stored authorization/app IDs, action byte and challenge, and waits for status. This code exists and has protocol-vector tests, but physical motor execution remains unverified.
+The controller enables indications, requests an encrypted challenge, sends encrypted `LOCK_ACTION` with the stored authorization/app IDs, action byte and challenge, and waits for status. This path has protocol-vector tests and confirmed physical LOCK/UNLOCK execution on the mounted lock.
 
 Deep links:
 
@@ -465,7 +465,37 @@ Launch configuration only (does not itself pair or operate the lock):
 
 Do not invoke Nuki deep links as a harmless smoke test: `/lock` and `/unlock` are real physical commands once credentials exist.
 
-## 10. Change-safety checklist
+## 10. Supabase hardware gateway
+
+The durable Supabase hardware-command architecture is configured in production. Migration `20260908_hardware_gateway.sql` is applied, and the dedicated non-admin gateway Auth account and `salon-tablet` gateway row are provisioned. Tablet login, heartbeat, Realtime connection, and an empty-queue claim are verified.
+
+- `hardware_commands` is the durable queue; Realtime refreshes Admin panels but is not the source of truth.
+- `hardware_device_states` separates the last confirmed state from availability. A failed boiler read never erases the last confirmed `on`/`off` value or its `observed_at`.
+- `hardware_gateways.last_seen_at` is the tablet heartbeat; Admin panels derive offline state from a stale heartbeat.
+- Only `admin_enqueue_hardware_command` creates commands, after a server-side `public.is_admin()` check.
+- The tablet uses a separate non-admin Supabase Auth user tied to one gateway row. Its access/refresh tokens are encrypted with Android Keystore. Never place a service-role key in the APK.
+- `HardwareGatewayService` is a `connectedDevice` foreground service that polls the durable queue. Web Admin panels use Supabase Realtime for shared results and state.
+- Existing camera, boiler, and Nuki deep links remain local fallbacks on the supported salon tablet.
+- Nuki secrets remain exclusively in `NukiCredentialStore`; no Nuki credential is uploaded to Supabase.
+- A sent boiler `on`/`off` command is not confirmation. Only feedback from `BoilerAutomationController` may update confirmed state and `observed_at`.
+- Existing Logcat evidence showed the frequent local `unknown` display followed `service_unavailable` while the accessibility service was disconnected. Do not bypass Android accessibility settings; restore and verify that service.
+
+Resource-efficiency rules:
+
+- Supabase Realtime is the primary command notification and Admin-state transport. Realtime events are hints; the durable database queue remains authoritative because Realtime does not guarantee delivery.
+- The Android gateway subscribes only to `INSERT` events for `hardware_commands` and requests only the inserted `id`. It immediately claims after a Realtime event or reconnect.
+- Gateway recovery polling is 120 seconds. Never reduce it to a few seconds; diagnose Realtime instead.
+- Database heartbeat is 60 seconds. Admin considers the gateway offline only after 150 seconds, allowing two missed heartbeats.
+- Phoenix/WebSocket heartbeats every 30 seconds keep Realtime connected but do not query or write the database.
+- Realtime reconnect uses exponential backoff: 5, 10, 20, 40, 60, then at most 120 seconds.
+- Admin panels perform one initial gateway/state/recent-command load and then apply Realtime row payloads directly. They must not add periodic hardware-state refetch loops.
+- React effect cleanup removes its channel, and one effect owns one channel, preventing duplicate subscriptions across rerenders and Strict Mode remounts.
+- Do not write unchanged device state on heartbeat. Device-state writes occur only for a completed command/observation; `observed_at` advances only for genuinely confirmed boiler `on`/`off` feedback.
+- `client_request_id` remains unique per requester, and only one queued/claimed/running command per gateway/device is allowed. Never automatically repeat ambiguous Nuki or boiler physical actions; an expired running lease becomes `outcome_unknown`.
+
+Production activation completed for the database and Android gateway. Web Admin deployment is the remaining rollout step at the time this section was updated.
+
+## 11. Change-safety checklist
 
 Before a normal change:
 

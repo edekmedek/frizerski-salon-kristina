@@ -1,4 +1,5 @@
 export type BoilerState = 'on' | 'off' | 'unknown'
+export type ConfirmedBoilerState = { state: 'on' | 'off'; confirmedAt: number }
 export type BoilerCommand = 'status' | 'on' | 'off'
 export type BoilerResult = 'on' | 'off' | 'unknown' | 'timeout' | 'error'
 
@@ -10,7 +11,7 @@ export type ConsumedBoilerResult = {
 }
 
 const BOILER_CACHE_KEY = 'salon-boiler-confirmed-state'
-const BOILER_CACHE_MAX_AGE_MS = 120_000
+export const BOILER_FRESH_MAX_AGE_MS = 120_000
 const BOILER_AUTO_LAST_REQUEST_KEY = 'salon-boiler-auto-last-request'
 const BOILER_AUTO_TRANSACTION_KEY = 'salon-boiler-auto-transaction'
 export const BOILER_AUTO_COOLDOWN_MS = 10_000
@@ -87,8 +88,6 @@ export function consumeBoilerResult(): ConsumedBoilerResult | null {
   }
   if (result === 'on' || result === 'off') {
     localStorage.setItem(BOILER_CACHE_KEY, JSON.stringify({ state: result, confirmedAt: Date.now() }))
-  } else {
-    localStorage.removeItem(BOILER_CACHE_KEY)
   }
   for (const key of ['boiler_result', 'boiler_detail', 'boiler_elapsed_ms', 'boiler_clicked']) {
     url.searchParams.delete(key)
@@ -97,19 +96,22 @@ export function consumeBoilerResult(): ConsumedBoilerResult | null {
   return consumed
 }
 
-export function readCachedBoilerState(): BoilerState {
+export function readConfirmedBoilerState(): ConfirmedBoilerState | null {
   try {
     const cached = JSON.parse(localStorage.getItem(BOILER_CACHE_KEY) ?? 'null') as {
       state?: string
       confirmedAt?: number
     } | null
     if (!cached || (cached.state !== 'on' && cached.state !== 'off')
-      || typeof cached.confirmedAt !== 'number'
-      || Date.now() - cached.confirmedAt > BOILER_CACHE_MAX_AGE_MS) {
-      return 'unknown'
-    }
-    return cached.state
+      || typeof cached.confirmedAt !== 'number') return null
+    return { state: cached.state, confirmedAt: cached.confirmedAt }
   } catch {
-    return 'unknown'
+    return null
   }
+}
+
+export function readCachedBoilerState(now = Date.now()): BoilerState {
+  const cached = readConfirmedBoilerState()
+  if (!cached || now - cached.confirmedAt > BOILER_FRESH_MAX_AGE_MS) return 'unknown'
+  return cached.state
 }

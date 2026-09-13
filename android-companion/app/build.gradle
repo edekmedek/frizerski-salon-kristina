@@ -2,6 +2,17 @@ plugins {
     id "com.android.application"
 }
 
+def salonEnv = [:]
+def salonEnvFile = rootProject.file('../.env')
+if (salonEnvFile.exists()) {
+    salonEnvFile.eachLine { line ->
+        def match = line =~ /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/
+        if (match.matches()) salonEnv[match[0][1]] = match[0][2].trim()
+    }
+}
+def configValue = { name -> System.getenv(name) ?: salonEnv[name] ?: '' }
+def quoted = { value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+
 android {
     namespace "hr.salon.kristina.companion"
     compileSdk 35
@@ -13,7 +24,11 @@ android {
         targetSdk 35
         versionCode 1
         versionName "0.1.0"
+        buildConfigField "String", "SUPABASE_URL", quoted(configValue('VITE_SUPABASE_URL'))
+        buildConfigField "String", "SUPABASE_PUBLISHABLE_KEY", quoted(configValue('VITE_SUPABASE_PUBLISHABLE_KEY'))
     }
+
+    buildFeatures { buildConfig true }
 
     buildTypes {
         release {
@@ -29,6 +44,7 @@ android {
 }
 
 dependencies {
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "com.goterl:lazysodium-android:5.1.0@aar"
     implementation "net.java.dev.jna:jna:5.17.0@aar"
 

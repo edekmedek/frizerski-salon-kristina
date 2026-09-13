@@ -35,7 +35,8 @@ import { supabase } from './lib/supabase'
 import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, replaceTreatmentPhoto, type PendingTreatmentPhoto, type TreatmentPhotoSet } from './lib/treatmentPhotoArchive'
 import { doorbellService } from './lib/doorbellService'
 import { COMPANION_UNAVAILABLE_MESSAGE, isSupportedSalonTablet, openSalonDoorCompanion } from './lib/tapoApp'
-import { claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, requestBoilerCommand, supportsAutomaticBoilerStatus, type BoilerCommand, type BoilerState } from './lib/boilerApp'
+import { claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, readConfirmedBoilerState, requestBoilerCommand, supportsAutomaticBoilerStatus, type BoilerCommand, type BoilerState } from './lib/boilerApp'
+import { commandStateFromRow, confirmedStateAge, deviceStateFromRow, enqueueHardwareCommand, gatewayFromRow, gatewayIsOnline, loadHardwareGateway, shouldBootstrapBoilerStatus, subscribeToHardware, type HardwareAction, type HardwareCommandState, type HardwareDevice, type HardwareDeviceState, type HardwareGateway } from './lib/hardwareGateway'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -143,12 +144,16 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const initialAdminPinFields = createEmptyAdminPinFields()
   const [initialBoilerResult] = useState(() => consumeBoilerResult())
   const [initialBoilerResume] = useState(() => consumeBoilerResumeSignal())
-  const [boilerState, setBoilerState] = useState<BoilerState>(() => {
+  const [boilerState] = useState<BoilerState>(() => {
     const result = initialBoilerResult?.result
     return result === 'on' || result === 'off' ? result : readCachedBoilerState()
   })
   const [boilerBusy, setBoilerBusy] = useState(false)
   const [boilerOperation, setBoilerOperation] = useState<BoilerCommand>('status')
+  const [hardwareGateway, setHardwareGateway] = useState<HardwareGateway | null>(null)
+  const [hardwareStates, setHardwareStates] = useState<HardwareDeviceState[]>([])
+  const [hardwareCommands, setHardwareCommands] = useState<HardwareCommandState[]>([])
+  const [hardwareBusy, setHardwareBusy] = useState<HardwareDevice | null>(null)
   const [data, setData] = useState<SalonData>(() => loadSalonData())
   const [view, setView] = useState<View>(() => isTabletViewport() ? 'salon-dashboard' : 'pregled')
   const [query, setQuery] = useState('')
@@ -217,6 +222,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const previousNoChargeRef = useRef(false)
   const priceBeforeNoChargeRef = useRef<{ appointmentId: string; price: number; manual: boolean } | null>(null)
   const boilerBusyRef = useRef(false)
+  const hardwareBusyRef = useRef(false)
   useAutoDismissNotice(notice, setNotice)
 
   useEffect(() => {
@@ -307,21 +313,100 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     setView(next)
   }
   function openVideoDoorbell() {
+    if (supabase && hardwareGateway) {
+      void sendHardwareCommand('camera', 'open_live')
+      return
+    }
+    if (!isSupportedSalonTablet()) {
+      setNotice('Salon tablet gateway još nije konfiguriran.')
+      return
+    }
     openSalonDoorCompanion({
       onUnavailable: () => setNotice(COMPANION_UNAVAILABLE_MESSAGE),
     })
   }
   function showDoorLockUnavailable() {
+    if (supabase) {
+      if (hardwareGateway) void sendHardwareCommand('nuki', 'unlock')
+      else setNotice('Salon tablet gateway još nije dostupan.')
+      return
+    }
+    if (!isSupportedSalonTablet()) {
+      setNotice('Salon tablet gateway još nije konfiguriran.')
+      return
+    }
     window.location.href = 'salonkristina://nuki/unlock'
+  }
+  async function sendHardwareCommand(device: HardwareDevice, action: HardwareAction) {
+    if (!supabase || !hardwareGateway || hardwareBusyRef.current) return
+    hardwareBusyRef.current = true
+    setHardwareBusy(device)
+    try {
+      await enqueueHardwareCommand(supabase, hardwareGateway.id, device, action)
+      setNotice('Naredba je poslana salon tabletu.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Naredbu nije moguće poslati.')
+    } finally {
+      hardwareBusyRef.current = false
+      setHardwareBusy(null)
+    }
   }
   function runBoilerCommand(command: BoilerCommand) {
     if (boilerBusyRef.current) return
+    if (supabase) {
+      if (hardwareGateway) {
+        setBoilerOperation(command)
+        void sendHardwareCommand('boiler', command)
+      }
+      return
+    }
+    if (!isSupportedSalonTablet()) {
+      setNotice('Salon tablet gateway još nije konfiguriran.')
+      return
+    }
     boilerBusyRef.current = true
     setBoilerBusy(true)
     setBoilerOperation(command)
-    setBoilerState('unknown')
     requestBoilerCommand(command)
   }
+
+  useEffect(() => {
+    if (!supabase) return
+    const supabaseClient = supabase
+    let active = true
+    let channel: ReturnType<typeof subscribeToHardware> | null = null
+    const loadInitialState = async () => {
+      try {
+        const loaded = await loadHardwareGateway(supabaseClient)
+        if (!active) return
+        setHardwareGateway(loaded.gateway)
+        setHardwareStates(loaded.states)
+        setHardwareCommands(loaded.commands)
+        if (loaded.gateway && !channel) channel = subscribeToHardware(supabaseClient, loaded.gateway.id, change => {
+          if (change.table === 'hardware_gateways') setHardwareGateway(gatewayFromRow(change.row))
+          if (change.table === 'hardware_device_states') {
+            const next = deviceStateFromRow(change.row)
+            setHardwareStates(current => [...current.filter(item => item.device !== next.device), next])
+          }
+          if (change.table === 'hardware_commands') {
+            const next = commandStateFromRow(change.row)
+            setHardwareCommands(current => [next, ...current.filter(item => item.id !== next.id)].slice(0, 20))
+          }
+        })
+        if (loaded.gateway && shouldBootstrapBoilerStatus(loaded.states, loaded.commands)) {
+          void enqueueHardwareCommand(supabaseClient, loaded.gateway.id, 'boiler', 'status')
+            .catch(error => console.error('[hardware] initial boiler status failed', error))
+        }
+      } catch (error) {
+        if (active) console.error('[hardware] initial state load failed', error)
+      }
+    }
+    void loadInitialState()
+    return () => {
+      active = false
+      if (channel) void supabaseClient.removeChannel(channel)
+    }
+  }, [])
 
   useEffect(() => { boilerBusyRef.current = boilerBusy }, [boilerBusy])
 
@@ -1543,21 +1628,39 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         rescheduleDuration,
       )
     : []
-  const showDoorControls = isSupportedSalonTablet()
+  const localConfirmedBoiler = readConfirmedBoilerState()
+  const remoteBoiler = hardwareStates.find(item => item.device === 'boiler')
+  const confirmedBoilerState: BoilerState = remoteBoiler?.state === 'on' || remoteBoiler?.state === 'off'
+    ? remoteBoiler.state : localConfirmedBoiler?.state ?? boilerState
+  const confirmedAt = remoteBoiler?.observedAt
+    ?? (localConfirmedBoiler ? new Date(localConfirmedBoiler.confirmedAt).toISOString() : null)
+  const ageMs = confirmedStateAge(confirmedAt)
+  const ageMinutes = ageMs === null ? null : Math.max(0, Math.floor(ageMs / 60_000))
+  const gatewayOnline = gatewayIsOnline(hardwareGateway)
+  const boilerAvailability = hardwareGateway
+    ? (!gatewayOnline ? 'offline'
+      : remoteBoiler?.availability === 'error' ? 'error'
+        : ageMs === null || ageMs > 120_000 ? 'stale' : 'available')
+    : confirmedBoilerState === 'unknown' ? 'offline' : 'stale'
+  const boilerWorking = boilerBusy || hardwareBusy === 'boiler'
+    || hardwareCommands.some(item => item.device === 'boiler' && ['queued', 'claimed', 'running'].includes(item.status))
+  const showDoorControls = Boolean(supabase) || isSupportedSalonTablet()
   return <div className={`app-shell${showDoorControls ? ' has-door-controls' : ''}`}>
     {showDoorControls && <div className="door-controls-fab">
-      <div className={`boiler-control boiler-${boilerState}${boilerBusy ? ' busy' : ''}`}>
-        {!boilerBusy && <button className="boiler-action" type="button" onClick={()=>runBoilerCommand(boilerState === 'on' ? 'off' : boilerState === 'off' ? 'on' : 'status')}>
-          {boilerState === 'on' ? 'Isključi' : boilerState === 'off' ? 'Uključi' : 'Pokušaj ponovno'}
+      <div className={`boiler-control boiler-${confirmedBoilerState}${boilerWorking ? ' busy' : ''}`}>
+        {!boilerWorking && <button className="boiler-action" type="button" onClick={()=>runBoilerCommand(confirmedBoilerState === 'on' ? 'off' : confirmedBoilerState === 'off' ? 'on' : 'status')}>
+          {confirmedBoilerState === 'on' ? 'Isključi' : confirmedBoilerState === 'off' ? 'Uključi' : 'Pokušaj ponovno'}
         </button>}
-        <button className="boiler-status" type="button" disabled={boilerBusy} onClick={()=>runBoilerCommand('status')}>
-          Bojler <span aria-hidden="true">●</span> {boilerBusy
+        <button className="boiler-status" type="button" disabled={boilerWorking} onClick={()=>runBoilerCommand('status')}>
+          Bojler <span aria-hidden="true">●</span> {boilerWorking
             ? boilerOperation === 'on' ? 'UKLJUČUJEM…' : boilerOperation === 'off' ? 'ISKLJUČUJEM…' : 'PROVJERA…'
-            : boilerState === 'on' ? 'UKLJUČEN' : boilerState === 'off' ? 'ISKLJUČEN' : 'STANJE NEPOZNATO'}
+            : confirmedBoilerState === 'on' ? `UKLJUČEN${boilerAvailability !== 'available' && ageMinutes !== null ? ` — prije ${ageMinutes} min, trenutno nepotvrđeno` : ''}`
+              : confirmedBoilerState === 'off' ? `ISKLJUČEN${boilerAvailability !== 'available' && ageMinutes !== null ? ` — prije ${ageMinutes} min, trenutno nepotvrđeno` : ''}`
+                : 'STANJE NEPOZNATO'}
         </button>
       </div>
-      <button className="video-doorbell-fab" type="button" onClick={openVideoDoorbell}>Kamera</button>
-      <button className="door-open-placeholder" type="button" onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
+      <button className="video-doorbell-fab" type="button" disabled={hardwareBusy === 'camera'} onClick={openVideoDoorbell}>Kamera</button>
+      <button className="door-open-placeholder" type="button" disabled={hardwareBusy === 'nuki'} onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
     </div>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>
