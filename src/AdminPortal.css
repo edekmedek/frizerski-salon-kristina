@@ -1219,10 +1219,59 @@
   .app-shell.has-door-controls .door-controls-fab {
     top: calc(12px + env(safe-area-inset-top));
     bottom: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, .82fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
   }
 
   .app-shell.has-door-controls > main {
-    padding-top: calc(78px + env(safe-area-inset-top));
+    padding-top: calc(126px + env(safe-area-inset-top));
+  }
+
+  .app-shell.has-door-controls .boiler-control,
+  .app-shell.has-door-controls .video-doorbell-fab,
+  .app-shell.has-door-controls .door-open-placeholder {
+    min-width: 0;
+    min-height: 42px;
+  }
+
+  .app-shell.has-door-controls .boiler-control {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .app-shell.has-door-controls .boiler-status,
+  .app-shell.has-door-controls .boiler-action,
+  .app-shell.has-door-controls .video-doorbell-fab,
+  .app-shell.has-door-controls .door-open-placeholder {
+    overflow: hidden;
+    width: 100%;
+    padding: 4px 5px;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell.has-door-controls .boiler-action {
+    border-right: 0 !important;
+    border-bottom: 1px solid #d8ccc4 !important;
+  }
+
+  .app-shell.has-door-controls .boiler-status {
+    min-width: 0;
+  }
+
+  .app-shell.has-door-controls .nuki-state {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    min-width: 0;
+    padding: 2px 4px 0;
+    font-size: .8rem;
+  }
+
+  .app-shell.has-door-controls .nuki-state small {
+    white-space: nowrap;
   }
 }
 
