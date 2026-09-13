@@ -20,16 +20,23 @@ public final class HardwareGatewayService extends Service {
     private static final int NOTIFICATION = 236;
     static final long FALLBACK_POLL_MS = 120_000L;
     static final long HEARTBEAT_MS = 60_000L;
+    static final long NUKI_AUTO_LOCK_DELAY_MS = 20_000L;
+    static final long NUKI_STATE_REFRESH_MS = 600_000L;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean busy;
     private volatile boolean claimInFlight;
+    private boolean autoLockScheduled;
+    private boolean autoLockInFlight;
+    private boolean nukiStateReadInFlight;
     private HardwareGatewayClient client;
     private NukiBleController activeNuki;
     private HardwareRealtimeClient realtime;
     private boolean started;
     private final Runnable poll = this::pollNow;
     private final Runnable heartbeat = this::heartbeatNow;
+    private final Runnable nukiAutoLock = this::runNukiAutoLock;
+    private final Runnable nukiStateRefresh = this::refreshNukiState;
 
     public static void start(Context context) {
         context.startForegroundService(new Intent(context, HardwareGatewayService.class));
@@ -51,6 +58,7 @@ public final class HardwareGatewayService extends Service {
             realtime.start();
             main.post(heartbeat);
             main.post(poll);
+            main.postDelayed(nukiStateRefresh, NUKI_STATE_REFRESH_MS);
         }
         return START_STICKY;
     }
@@ -62,7 +70,7 @@ public final class HardwareGatewayService extends Service {
         GatewayExecutionReporter.clear(); worker.shutdownNow(); super.onDestroy();
     }
     private void pollNow() {
-        if (!busy && !claimInFlight) {
+        if (!busy && !claimInFlight && !autoLockInFlight && !nukiStateReadInFlight) {
             claimInFlight = true;
             worker.execute(() -> {
             try {
@@ -79,7 +87,7 @@ public final class HardwareGatewayService extends Service {
         } else main.postDelayed(poll, FALLBACK_POLL_MS);
     }
     private void requestImmediatePoll() {
-        if (busy) return;
+        if (busy || autoLockInFlight || nukiStateReadInFlight) return;
         main.removeCallbacks(poll); main.post(poll);
     }
     private void heartbeatNow() {
@@ -105,13 +113,105 @@ public final class HardwareGatewayService extends Service {
     }
     private void executeNuki(HardwareCommand command) {
         if (!NukiPermissions.granted(this)) { finish(command, "failed", "permission_missing", "Bluetooth/location permission missing", null); return; }
-        NukiCommand action = NukiCommand.from(android.net.Uri.parse("salonkristina://nuki/" + command.action));
+        NukiCommand action = command.schedulesNukiAutoLock()
+                ? NukiCommand.OPEN_DOOR
+                : NukiCommand.from(android.net.Uri.parse("salonkristina://nuki/" + command.action));
+        if (command.schedulesNukiAutoLock()) cancelPendingNukiAutoLock();
         activeNuki = new NukiBleController(this, new NukiBleController.Listener() {
+            private String confirmedState = "unknown";
             @Override public void onProgress(String message) {}
-            @Override public void onSuccess(String message) { activeNuki = null; finish(command, "succeeded", "confirmed", message, null); }
+            @Override public void onState(String state) { confirmedState = state; }
+            @Override public void onActionSuccess() {
+                if (command.schedulesNukiAutoLock()) {
+                    main.post(() -> {
+                        AutomationLog.step("Gateway Nuki unlock successful", "command=" + command.id);
+                        scheduleNukiAutoLock();
+                    });
+                }
+            }
+            @Override public void onSuccess(String message) {
+                activeNuki = null;
+                finish(command, "succeeded", "confirmed", message, confirmedState);
+            }
             @Override public void onError(String message, Throwable error) { activeNuki = null; finish(command, "failed", "nuki_error", message, null); }
         });
-        activeNuki.execute(action);
+        activeNuki.executeAndReadState(action);
+    }
+    private void cancelPendingNukiAutoLock() {
+        if (!autoLockScheduled) return;
+        main.removeCallbacks(nukiAutoLock);
+        autoLockScheduled = false;
+        AutomationLog.step("Gateway Nuki auto-lock timer reset", "new unlock received");
+    }
+    private void scheduleNukiAutoLock() {
+        main.removeCallbacks(nukiAutoLock);
+        autoLockScheduled = true;
+        main.postDelayed(nukiAutoLock, NUKI_AUTO_LOCK_DELAY_MS);
+        AutomationLog.step("Gateway Nuki auto-lock scheduled", "delayMs=" + NUKI_AUTO_LOCK_DELAY_MS);
+    }
+    private void runNukiAutoLock() {
+        autoLockScheduled = false;
+        if (busy || activeNuki != null) {
+            autoLockScheduled = true;
+            main.postDelayed(nukiAutoLock, 1_000L);
+            return;
+        }
+        if (!NukiPermissions.granted(this)) {
+            AutomationLog.error("Gateway Nuki auto-lock result", "Bluetooth/location permission missing", null);
+            return;
+        }
+        autoLockInFlight = true;
+        AutomationLog.step("Gateway Nuki auto-lock started");
+        activeNuki = new NukiBleController(this, new NukiBleController.Listener() {
+            private String confirmedState = "unknown";
+            @Override public void onProgress(String message) {}
+            @Override public void onState(String state) { confirmedState = state; }
+            @Override public void onSuccess(String message) {
+                activeNuki = null;
+                autoLockInFlight = false;
+                AutomationLog.step("Gateway Nuki auto-lock result", "success: " + message);
+                publishNukiState(confirmedState, "auto-lock: " + message);
+                requestImmediatePoll();
+            }
+            @Override public void onError(String message, Throwable error) {
+                activeNuki = null;
+                autoLockInFlight = false;
+                AutomationLog.error("Gateway Nuki auto-lock result", message, error);
+                requestImmediatePoll();
+            }
+        });
+        activeNuki.executeAndReadState(NukiCommand.LOCK);
+    }
+    private void refreshNukiState() {
+        main.removeCallbacks(nukiStateRefresh);
+        main.postDelayed(nukiStateRefresh, NUKI_STATE_REFRESH_MS);
+        if (busy || claimInFlight || autoLockInFlight || nukiStateReadInFlight
+                || activeNuki != null || !NukiPermissions.granted(this)) return;
+        nukiStateReadInFlight = true;
+        activeNuki = new NukiBleController(this, new NukiBleController.Listener() {
+            private String state = "unknown";
+            @Override public void onProgress(String message) {}
+            @Override public void onState(String value) { state = value; }
+            @Override public void onSuccess(String message) {
+                activeNuki = null;
+                nukiStateReadInFlight = false;
+                publishNukiState(state, message);
+                requestImmediatePoll();
+            }
+            @Override public void onError(String message, Throwable error) {
+                activeNuki = null;
+                nukiStateReadInFlight = false;
+                AutomationLog.error("Gateway periodic Nuki state read", message, error);
+                requestImmediatePoll();
+            }
+        });
+        activeNuki.readState();
+    }
+    private void publishNukiState(String state, String detail) {
+        worker.execute(() -> {
+            try { client.reportNukiState(state, detail); }
+            catch (Exception error) { AutomationLog.error("Gateway Nuki state publish", error.getMessage(), error); }
+        });
     }
     private void finish(HardwareCommand command, String status, String code, String detail, String confirmed) {
         worker.execute(() -> uploadCompletion(command, status, code, detail, confirmed, 0));

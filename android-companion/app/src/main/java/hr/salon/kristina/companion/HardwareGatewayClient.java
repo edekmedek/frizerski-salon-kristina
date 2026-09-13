@@ -34,6 +34,10 @@ public final class HardwareGatewayClient {
                 .put("final_status", status).put("final_code", code).put("final_detail", detail)
                 .put("confirmed_state", confirmedState == null ? JSONObject.NULL : confirmedState));
     }
+    public void reportNukiState(String state, String detail) throws Exception {
+        rpc("gateway_report_nuki_state", new JSONObject().put("reported_state", state)
+                .put("reported_detail", detail == null ? "" : detail));
+    }
     public void heartbeat(String error) throws Exception {
         rpc("gateway_heartbeat", new JSONObject().put("gateway_app_version", BuildConfig.VERSION_NAME)
                 .put("gateway_error", error == null ? JSONObject.NULL : error));

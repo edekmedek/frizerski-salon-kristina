@@ -103,6 +103,31 @@ public final class NukiProtocolTest {
                 NukiProtocol.u16(result, result.length - 2));
     }
 
+    @Test
+    public void openDoorUsesOfficialUnlatchAction() {
+        assertEquals(0x03, Byte.toUnsignedInt(NukiCommand.OPEN_DOOR.action));
+        assertEquals(0x03, Byte.toUnsignedInt(NukiProtocol.lockAction(
+                NukiCommand.OPEN_DOOR.action, 0, new byte[32])[0]));
+    }
+
+    @Test
+    public void parsesConfirmedAndNonFinalKeyturnerStates() {
+        assertEquals("locked", NukiProtocol.confirmedLockState(hex("0201")));
+        assertEquals("unlocked", NukiProtocol.confirmedLockState(hex("0203")));
+        for (String state : new String[]{"02", "04", "05", "06", "07", "FF"}) {
+            assertEquals("unknown", NukiProtocol.confirmedLockState(hex("02" + state)));
+        }
+        for (String state : new String[]{"02", "04", "05", "06", "07"}) {
+            assertEquals(true, NukiProtocol.isTransitionalLockState(hex("02" + state)));
+        }
+        assertEquals(false, NukiProtocol.isTransitionalLockState(hex("02FF")));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsShortKeyturnerStates() {
+        NukiProtocol.confirmedLockState(hex("02"));
+    }
+
     private static byte[] hex(String value) {
         byte[] result = new byte[value.length() / 2];
         for (int index = 0; index < result.length; index++) {

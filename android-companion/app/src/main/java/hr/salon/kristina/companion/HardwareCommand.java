@@ -13,4 +13,7 @@ public final class HardwareCommand {
                 || ("boiler".equals(device) && ("status".equals(action) || "on".equals(action) || "off".equals(action)))
                 || ("nuki".equals(device) && ("lock".equals(action) || "unlock".equals(action)));
     }
+    public boolean schedulesNukiAutoLock() {
+        return "nuki".equals(device) && "unlock".equals(action);
+    }
 }

@@ -5,6 +5,7 @@ import android.net.Uri;
 public enum NukiCommand {
     LOCK((byte) 0x02),
     UNLOCK((byte) 0x01),
+    OPEN_DOOR((byte) 0x03),
     UNKNOWN((byte) 0x00);
 
     final byte action;

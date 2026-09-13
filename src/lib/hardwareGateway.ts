@@ -34,8 +34,30 @@ export function confirmedStateAge(observedAt: string | null, now = Date.now()) {
 }
 
 export function shouldBootstrapBoilerStatus(states: HardwareDeviceState[], commands: HardwareCommandState[]) {
-  return !states.some(item => item.device === 'boiler')
-    && !commands.some(item => item.device === 'boiler')
+  return shouldBootstrapBoilerStatusAt(states, commands, Date.now())
+}
+
+export const BOILER_STATUS_BOOTSTRAP_COOLDOWN_MS = 5 * 60_000
+export const NUKI_STATE_STALE_MS = 15 * 60_000
+
+export function shouldBootstrapBoilerStatusAt(states: HardwareDeviceState[], commands: HardwareCommandState[], now: number) {
+  if (states.some(item => item.device === 'boiler'
+    && (item.state === 'on' || item.state === 'off') && item.observedAt)) return false
+  const statusCommands = commands.filter(item => item.device === 'boiler' && item.action === 'status')
+  if (statusCommands.some(item => ['queued', 'claimed', 'running'].includes(item.status))) return false
+  return !statusCommands.some(item => {
+    const requestedAt = Date.parse(item.requestedAt)
+    return Number.isFinite(requestedAt) && now - requestedAt < BOILER_STATUS_BOOTSTRAP_COOLDOWN_MS
+  })
+}
+
+export function displayedNukiState(state: HardwareDeviceState | undefined, now = Date.now()) {
+  const age = confirmedStateAge(state?.observedAt ?? null, now)
+  if (!state || state.availability !== 'available' || age === null || age > NUKI_STATE_STALE_MS) {
+    return { state: 'unknown' as const, age }
+  }
+  if (state.state === 'locked' || state.state === 'unlocked') return { state: state.state, age }
+  return { state: 'unknown' as const, age }
 }
 
 export function gatewayFromRow(row: Record<string, unknown>): HardwareGateway {

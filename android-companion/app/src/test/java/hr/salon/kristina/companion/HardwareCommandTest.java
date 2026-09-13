@@ -19,4 +19,14 @@ public class HardwareCommandTest {
         assertEquals(5_000L, HardwareRealtimeClient.reconnectDelay(0));
         assertEquals(120_000L, HardwareRealtimeClient.reconnectDelay(99));
     }
+    @Test public void schedulesAutoLockOnlyForGatewayNukiUnlock() {
+        assertTrue(new HardwareCommand("1", "nuki", "unlock").schedulesNukiAutoLock());
+        assertFalse(new HardwareCommand("2", "nuki", "lock").schedulesNukiAutoLock());
+        assertFalse(new HardwareCommand("3", "boiler", "on").schedulesNukiAutoLock());
+        assertEquals(20_000L, HardwareGatewayService.NUKI_AUTO_LOCK_DELAY_MS);
+    }
+    @Test public void localUnlockRemainsPlainUnlock() {
+        assertEquals(0x01, Byte.toUnsignedInt(NukiCommand.UNLOCK.action));
+        assertFalse(NukiCommand.UNLOCK == NukiCommand.OPEN_DOOR);
+    }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commandStateFromRow, confirmedStateAge, deviceStateFromRow, gatewayFromRow, gatewayIsOnline, isHardwareAction, shouldBootstrapBoilerStatus } from './hardwareGateway'
+import { commandStateFromRow, confirmedStateAge, deviceStateFromRow, displayedNukiState, gatewayFromRow, gatewayIsOnline, isHardwareAction, shouldBootstrapBoilerStatusAt } from './hardwareGateway'
 
 describe('hardware gateway contracts', () => {
   it('allows only device-specific commands', () => {
@@ -23,13 +23,22 @@ describe('hardware gateway contracts', () => {
     expect(deviceStateFromRow({ device: 'boiler', state: 'on', availability: 'stale', observed_at: '2026-09-08T09:57:00Z' }).state).toBe('on')
     expect(commandStateFromRow({ id: 'c', device: 'nuki', action: 'unlock', status: 'queued', requested_at: '2026-09-08T10:00:00Z' }).status).toBe('queued')
   })
-  it('bootstraps boiler status only before any shared state or command exists', () => {
-    expect(shouldBootstrapBoilerStatus([], [])).toBe(true)
-    expect(shouldBootstrapBoilerStatus([
+  it('retries boiler status bootstrap after cooldown without duplicating active work', () => {
+    const now = Date.parse('2026-09-13T12:00:00Z')
+    expect(shouldBootstrapBoilerStatusAt([], [], now)).toBe(true)
+    expect(shouldBootstrapBoilerStatusAt([
       deviceStateFromRow({ device: 'boiler', state: 'unknown', availability: 'error' }),
-    ], [])).toBe(false)
-    expect(shouldBootstrapBoilerStatus([], [
-      commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'failed', requested_at: '2026-09-08T10:00:00Z' }),
-    ])).toBe(false)
+    ], [], now)).toBe(true)
+    expect(shouldBootstrapBoilerStatusAt([], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'failed', requested_at: '2026-09-13T11:58:00Z' })], now)).toBe(false)
+    expect(shouldBootstrapBoilerStatusAt([], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'failed', requested_at: '2026-09-13T11:50:00Z' })], now)).toBe(true)
+    expect(shouldBootstrapBoilerStatusAt([], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'running', requested_at: '2026-09-13T11:50:00Z' })], now)).toBe(false)
+  })
+  it('shows only fresh confirmed Nuki state', () => {
+    const now = Date.parse('2026-09-13T12:00:00Z')
+    const locked = deviceStateFromRow({ device: 'nuki', state: 'locked', availability: 'available', observed_at: '2026-09-13T11:50:00Z' })
+    expect(displayedNukiState(locked, now).state).toBe('locked')
+    expect(displayedNukiState({ ...locked, state: 'unlocked' }, now).state).toBe('unlocked')
+    expect(displayedNukiState({ ...locked, observedAt: '2026-09-13T11:40:00Z' }, now).state).toBe('unknown')
+    expect(displayedNukiState({ ...locked, availability: 'stale' }, now).state).toBe('unknown')
   })
 })

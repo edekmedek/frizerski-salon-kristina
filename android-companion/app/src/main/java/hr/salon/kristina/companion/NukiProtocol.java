@@ -29,6 +29,7 @@ public final class NukiProtocol {
     public static final int AUTHORIZATION_AUTHENTICATOR = 0x0005;
     public static final int AUTHORIZATION_DATA = 0x0006;
     public static final int AUTHORIZATION_ID = 0x0007;
+    public static final int KEYTURNER_STATES = 0x000C;
     public static final int LOCK_ACTION = 0x000D;
     public static final int STATUS = 0x000E;
     public static final int AUTHORIZATION_INFO = 0x004C;
@@ -95,6 +96,25 @@ public final class NukiProtocol {
     public static byte[] lockAction(byte action, long appId, byte[] challenge) {
         requireLength(challenge, 32, "challenge");
         return concat(new byte[]{action}, le32(appId), new byte[]{0x00}, challenge);
+    }
+
+    public static String confirmedLockState(byte[] payload) {
+        if (payload == null || payload.length < 2) {
+            throw new IllegalArgumentException("Bad keyturner states payload");
+        }
+        int lockState = Byte.toUnsignedInt(payload[1]);
+        if (lockState == 0x01) return "locked";
+        if (lockState == 0x03) return "unlocked";
+        return "unknown";
+    }
+
+    public static boolean isTransitionalLockState(byte[] payload) {
+        if (payload == null || payload.length < 2) {
+            throw new IllegalArgumentException("Bad keyturner states payload");
+        }
+        int state = Byte.toUnsignedInt(payload[1]);
+        return state == 0x02 || state == 0x04 || state == 0x05
+                || state == 0x06 || state == 0x07;
     }
 
     public static byte[] plain(int command, byte[] payload) {

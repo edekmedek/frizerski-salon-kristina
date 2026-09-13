@@ -36,7 +36,7 @@ import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, re
 import { doorbellService } from './lib/doorbellService'
 import { COMPANION_UNAVAILABLE_MESSAGE, isSupportedSalonTablet, openSalonDoorCompanion } from './lib/tapoApp'
 import { claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, readConfirmedBoilerState, requestBoilerCommand, supportsAutomaticBoilerStatus, type BoilerCommand, type BoilerState } from './lib/boilerApp'
-import { commandStateFromRow, confirmedStateAge, deviceStateFromRow, enqueueHardwareCommand, gatewayFromRow, gatewayIsOnline, loadHardwareGateway, shouldBootstrapBoilerStatus, subscribeToHardware, type HardwareAction, type HardwareCommandState, type HardwareDevice, type HardwareDeviceState, type HardwareGateway } from './lib/hardwareGateway'
+import { commandStateFromRow, confirmedStateAge, deviceStateFromRow, displayedNukiState, enqueueHardwareCommand, gatewayFromRow, gatewayIsOnline, loadHardwareGateway, shouldBootstrapBoilerStatus, subscribeToHardware, type HardwareAction, type HardwareCommandState, type HardwareDevice, type HardwareDeviceState, type HardwareGateway } from './lib/hardwareGateway'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -1644,6 +1644,8 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     : confirmedBoilerState === 'unknown' ? 'offline' : 'stale'
   const boilerWorking = boilerBusy || hardwareBusy === 'boiler'
     || hardwareCommands.some(item => item.device === 'boiler' && ['queued', 'claimed', 'running'].includes(item.status))
+  const nukiDisplay = displayedNukiState(hardwareStates.find(item => item.device === 'nuki'))
+  const nukiAgeMinutes = nukiDisplay.age === null ? null : Math.max(0, Math.floor(nukiDisplay.age / 60_000))
   const showDoorControls = Boolean(supabase) || isSupportedSalonTablet()
   return <div className={`app-shell${showDoorControls ? ' has-door-controls' : ''}`}>
     {showDoorControls && <div className="door-controls-fab">
@@ -1661,6 +1663,11 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       </div>
       <button className="video-doorbell-fab" type="button" disabled={hardwareBusy === 'camera'} onClick={openVideoDoorbell}>Kamera</button>
       <button className="door-open-placeholder" type="button" disabled={hardwareBusy === 'nuki'} onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
+      <div className={`nuki-state nuki-${nukiDisplay.state}`} role="status">
+        {nukiDisplay.state === 'locked' ? '🔒 Zaključano'
+          : nukiDisplay.state === 'unlocked' ? '🔓 Otključano' : '⚠ Nepoznato'}
+        {nukiAgeMinutes !== null && <small>Zadnja potvrda prije {nukiAgeMinutes} min</small>}
+      </div>
     </div>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
       <nav>{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</nav>

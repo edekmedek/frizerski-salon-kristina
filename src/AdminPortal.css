@@ -1177,6 +1177,18 @@
 .boiler-off .boiler-status span { color: #987768; }
 .boiler-unknown .boiler-status span,
 .boiler-control.busy .boiler-status span { color: #c18722; }
+
+.nuki-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #755f55;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.nuki-state small { font-size: .65rem; font-weight: 500; opacity: .78; }
+.nuki-unknown { color: #9a6715; }
 .boiler-control.busy { opacity: .82; }
 
 .boiler-control button:focus-visible {

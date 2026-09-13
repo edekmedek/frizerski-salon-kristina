@@ -492,6 +492,10 @@ Resource-efficiency rules:
 - React effect cleanup removes its channel, and one effect owns one channel, preventing duplicate subscriptions across rerenders and Strict Mode remounts.
 - Do not write unchanged device state on heartbeat. Device-state writes occur only for a completed command/observation; `observed_at` advances only for genuinely confirmed boiler `on`/`off` feedback.
 - `client_request_id` remains unique per requester, and only one queued/claimed/running command per gateway/device is allowed. Never automatically repeat ambiguous Nuki or boiler physical actions; an expired running lease becomes `outcome_unknown`.
+- Confirmed Nuki state is read locally over the authorized Bluetooth API with encrypted `Request Data (0x0001)` for `Keyturner States (0x000C)`. Only lock state `0x01` is published as `locked` and `0x03` as `unlocked`; transitional, unlatched, Lock 'n' Go, malformed, and undefined values are `unknown` and must not be presented as a final lock position.
+- The foreground gateway performs a local Nuki state refresh at most every 10 minutes. This is BLE-only and does not poll Supabase. Successful new observations are published through the gateway-owned RPC; failed reads do not repeatedly rewrite unchanged database state.
+- Admin lock state uses the initial `hardware_device_states` fetch plus Realtime updates. A confirmed Nuki observation older than 15 minutes is displayed as unknown/stale, with its last-confirmed age.
+- Boiler bootstrap may retry only when no confirmed `on`/`off` observation exists, no status command is active, and no status attempt was made within the last 5 minutes. It runs only during Admin hardware bootstrap, not on a timer.
 
 Production activation completed for the database and Android gateway. Web Admin deployment is the remaining rollout step at the time this section was updated.
 

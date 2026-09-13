@@ -33,13 +33,15 @@ public final class NukiBleController {
         void onProgress(String message);
         void onSuccess(String message);
         void onError(String message, Throwable error);
+        default void onState(String state) {}
+        default void onActionSuccess() {}
     }
 
-    private enum Mode { PAIR, ACTION }
+    private enum Mode { PAIR, ACTION, STATE }
     private enum Phase {
         SCANNING, CONNECTING, DISCOVERING, ENABLING_INDICATIONS,
         WAIT_PUBLIC_KEY, WAIT_PAIR_CHALLENGE, WAIT_AUTH_INFO, WAIT_AUTH_ID,
-        WAIT_ACTION_CHALLENGE, WAIT_ACTION_RESULT, FINISHED
+        WAIT_ACTION_CHALLENGE, WAIT_ACTION_RESULT, WAIT_STATE_RESULT, WAIT_STATE_RETRY, FINISHED
     }
 
     private final Context context;
@@ -61,6 +63,8 @@ public final class NukiBleController {
     private long pin;
     private byte action;
     private String deviceAddress;
+    private boolean readStateAfterAction;
+    private int stateReadAttempts;
 
     public NukiBleController(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -83,6 +87,16 @@ public final class NukiBleController {
 
     @SuppressLint("MissingPermission")
     public void execute(NukiCommand command) {
+        execute(command, false);
+    }
+
+    @SuppressLint("MissingPermission")
+    public void executeAndReadState(NukiCommand command) {
+        execute(command, true);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void execute(NukiCommand command, boolean readState) {
         try {
             credentials = store.load();
         } catch (GeneralSecurityException error) {
@@ -94,7 +108,24 @@ public final class NukiBleController {
             return;
         }
         mode = Mode.ACTION;
+        readStateAfterAction = readState;
         action = command.action;
+        connect(BluetoothAdapter.getDefaultAdapter().getRemoteDevice(credentials.deviceAddress));
+    }
+
+    @SuppressLint("MissingPermission")
+    public void readState() {
+        try {
+            credentials = store.load();
+        } catch (GeneralSecurityException error) {
+            fail("Nuki vjerodajnice se ne mogu dešifrirati", error);
+            return;
+        }
+        if (credentials == null) {
+            fail("Nuki nije uparen s Companion aplikacijom", null);
+            return;
+        }
+        mode = Mode.STATE;
         connect(BluetoothAdapter.getDefaultAdapter().getRemoteDevice(credentials.deviceAddress));
     }
 
@@ -286,10 +317,12 @@ public final class NukiBleController {
             if (mode == Mode.PAIR) {
                 phase = Phase.WAIT_PUBLIC_KEY;
                 write(NukiProtocol.request(NukiProtocol.PUBLIC_KEY));
-            } else {
+            } else if (mode == Mode.ACTION) {
                 phase = Phase.WAIT_ACTION_CHALLENGE;
                 write(crypto.encrypt(credentials.authorizationId, NukiProtocol.REQUEST_DATA,
                         NukiProtocol.le16(NukiProtocol.CHALLENGE), credentials.sharedKey));
+            } else {
+                requestState();
             }
         }
 
@@ -356,7 +389,7 @@ public final class NukiBleController {
         incoming.write(chunk, 0, chunk.length);
         byte[] data = incoming.toByteArray();
         try {
-            if (mode == Mode.ACTION || phase == Phase.WAIT_AUTH_ID) {
+            if (mode == Mode.ACTION || mode == Mode.STATE || phase == Phase.WAIT_AUTH_ID) {
                 if (data.length < 30) return;
                 int total = 30 + NukiProtocol.u16(data, 28);
                 if (data.length < total) return;
@@ -364,6 +397,9 @@ public final class NukiBleController {
                 resetIncoming(data, total);
                 if (mode == Mode.ACTION) {
                     handleActionMessage(crypto.decrypt(message, credentials.authorizationId,
+                            credentials.sharedKey));
+                } else if (mode == Mode.STATE) {
+                    handleStateMessage(crypto.decrypt(message, credentials.authorizationId,
                             credentials.sharedKey));
                 } else {
                     handlePairMessage(crypto.decrypt(message,
@@ -442,6 +478,11 @@ public final class NukiBleController {
     }
 
     private void handleActionMessage(NukiProtocol.ParsedPlain message) {
+        if (message.command == NukiProtocol.KEYTURNER_STATES
+                && phase == Phase.WAIT_STATE_RESULT) {
+            handleStateMessage(message);
+            return;
+        }
         if (message.command == NukiProtocol.CHALLENGE && phase == Phase.WAIT_ACTION_CHALLENGE) {
             if (message.payload.length != 32) throw new IllegalArgumentException("Bad challenge");
             phase = Phase.WAIT_ACTION_RESULT;
@@ -455,7 +496,11 @@ public final class NukiBleController {
             if (message.payload.length != 1) throw new IllegalArgumentException("Bad status");
             int status = Byte.toUnsignedInt(message.payload[0]);
             progress("Nuki status akcije", "status=" + status);
-            if (status == 0x00) succeed("Nuki " + actionName() + " uspješno izvršen");
+            if (status == 0x00) {
+                listener.onActionSuccess();
+                if (readStateAfterAction) requestState();
+                else succeed("Nuki " + actionName() + " uspješno izvršen");
+            }
             else if (status != 0x01) fail("Nepoznat Nuki status akcije " + status, null);
             return;
         }
@@ -468,8 +513,42 @@ public final class NukiBleController {
         progress("Nuki indikacija", "command=0x" + Integer.toHexString(message.command));
     }
 
+    private void requestState() {
+        phase = Phase.WAIT_STATE_RESULT;
+        stateReadAttempts++;
+        write(crypto.encrypt(credentials.authorizationId, NukiProtocol.REQUEST_DATA,
+                NukiProtocol.le16(NukiProtocol.KEYTURNER_STATES), credentials.sharedKey));
+    }
+
+    private void handleStateMessage(NukiProtocol.ParsedPlain message) {
+        if (message.command == NukiProtocol.KEYTURNER_STATES
+                && phase == Phase.WAIT_STATE_RESULT) {
+            String state = NukiProtocol.confirmedLockState(message.payload);
+            int raw = Byte.toUnsignedInt(message.payload[1]);
+            progress("Nuki stvarno stanje", "lockState=0x" + Integer.toHexString(raw)
+                    + " mapped=" + state + " attempt=" + stateReadAttempts);
+            if (NukiProtocol.isTransitionalLockState(message.payload)
+                    && stateReadAttempts < 4) {
+                phase = Phase.WAIT_STATE_RETRY;
+                handler.postDelayed(this::requestState, 1_000L);
+                return;
+            }
+            listener.onState(state);
+            succeed("Nuki stanje očitano: " + state);
+            return;
+        }
+        if (message.command == 0x0012) {
+            int code = message.payload.length == 0 ? -1 : Byte.toUnsignedInt(message.payload[0]);
+            fail("Nuki je vratio grešku 0x" + Integer.toHexString(code), null);
+            return;
+        }
+        progress("Nuki indikacija", "command=0x" + Integer.toHexString(message.command));
+    }
+
     private String actionName() {
-        return action == 0x01 ? "unlock" : "lock";
+        if (action == NukiCommand.UNLOCK.action) return "unlock";
+        if (action == NukiCommand.OPEN_DOOR.action) return "open door";
+        return "lock";
     }
 
     private void progress(String message, String detail) {
@@ -487,6 +566,14 @@ public final class NukiBleController {
 
     private synchronized void fail(String message, Throwable error) {
         if (phase == Phase.FINISHED) return;
+        if (mode == Mode.ACTION && readStateAfterAction
+                && (phase == Phase.WAIT_STATE_RESULT || phase == Phase.WAIT_STATE_RETRY)) {
+            readStateAfterAction = false;
+            AutomationLog.error("Nuki post-action state read failed", message, error);
+            listener.onState("unknown");
+            succeed("Nuki " + actionName() + " uspješno izvršen; stanje nije potvrđeno");
+            return;
+        }
         phase = Phase.FINISHED;
         pin = 0;
         AutomationLog.error("Nuki operation failed", message, error);

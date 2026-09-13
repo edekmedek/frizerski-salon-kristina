@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const sql = readFileSync('supabase/migrations/20260908_hardware_gateway.sql', 'utf8')
+const nukiStateSql = readFileSync('supabase/migrations/20260913_nuki_device_state.sql', 'utf8')
 
 describe('hardware gateway migration security and confirmed-state rules', () => {
   it('requires admin authorization and restricts device/action pairs', () => {
@@ -21,5 +22,13 @@ describe('hardware gateway migration security and confirmed-state rules', () => 
     expect(sql).toContain('unique (requested_by, client_request_id)')
     expect(sql).toContain('hardware_commands_one_active_device_idx')
     expect(sql).toContain('on conflict (requested_by, client_request_id) do nothing')
+  })
+  it('restricts Nuki publication to the owning gateway and known states', () => {
+    expect(nukiStateSql).toContain("confirmed_state in ('locked', 'unlocked', 'unknown')")
+    expect(nukiStateSql).toContain("reported_state not in ('locked', 'unlocked', 'unknown')")
+    expect(nukiStateSql).toContain('g.auth_user_id = auth.uid() and g.enabled')
+    expect(nukiStateSql).toContain('revoke execute on function public.gateway_report_nuki_state(text, text) from public, anon')
+    expect(nukiStateSql).not.toContain('grant update on public.hardware_device_states')
+    expect(nukiStateSql).not.toContain('create table')
   })
 })
