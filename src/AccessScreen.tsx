@@ -39,6 +39,7 @@ export function AccessScreen() {
   const [message, setMessage] = useState('')
   const [working, setWorking] = useState(false)
   const [recoveryReady, setRecoveryReady] = useState(false)
+  const [heroVideoFailed, setHeroVideoFailed] = useState(false)
 
   useEffect(() => {
     if (!supabase || !recoveryRequested) return
@@ -252,9 +253,25 @@ export function AccessScreen() {
           <p className="salon-home-lead">Mjesto posvećeno lijepoj, njegovanoj kosi i frizuri u kojoj ćete se osjećati kao svoji.</p>
           <button className="primary salon-client-entry" onClick={() => setMode('client')}>Ulaz za klijente</button>
         </div>
-        <div className="salon-photo-placeholder salon-hero-placeholder" role="img" aria-label="Mjesto za buduću fotografiju salona">
-          <span>K</span>
-          <small>Fotografija salona</small>
+        <div className="salon-hero-placeholder">
+          {!heroVideoFailed
+            ? <video
+                className="salon-hero-video"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                onError={() => setHeroVideoFailed(true)}
+                aria-label="Video salona"
+              >
+                <source src={`${import.meta.env.BASE_URL}media/hero.mp4`} type="video/mp4" />
+                Vaš preglednik ne podržava video.
+              </video>
+            : <div className="salon-photo-placeholder salon-hero-fallback" role="img" aria-label="Fotografija salona nije dostupna">
+                <span>K</span>
+                <small>Fotografija salona</small>
+              </div>}
         </div>
       </section>
       <section className="salon-services" aria-labelledby="salon-services-title">

@@ -80,7 +80,9 @@
 .salon-photo-placeholder{display:grid;min-width:0;place-items:center;align-content:center;gap:8px;overflow:hidden;border:1px solid #d9c1b4;border-radius:18px;background:linear-gradient(145deg,#e7d6cc,#cfae9d);color:#6f4b40}
 .salon-photo-placeholder span{font:500 34px 'Playfair Display'}
 .salon-photo-placeholder small{font-size:11px;letter-spacing:.12em;text-transform:uppercase}
-.salon-hero-placeholder{min-height:310px}
+.salon-hero-placeholder{position:relative;min-height:310px;overflow:hidden;border:1px solid #d9c1b4;border-radius:18px;background:linear-gradient(145deg,#e7d6cc,#cfae9d)}
+.salon-hero-video{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:center}
+.salon-hero-fallback{height:100%;border:0;border-radius:0}
 .salon-services{padding-top:48px;padding-bottom:54px;border-top:1px solid var(--line)}
 .salon-services h2,.salon-gallery h2{margin:7px 0 24px;font-size:clamp(30px,8vw,44px)}
 .salon-service-list{display:grid;border-top:1px solid var(--line)}
