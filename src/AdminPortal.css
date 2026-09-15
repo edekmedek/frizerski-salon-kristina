@@ -1229,12 +1229,12 @@
   padding-top: calc(78px + env(safe-area-inset-top));
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1100px) {
   .app-shell.has-door-controls .door-controls-fab {
     top: calc(12px + env(safe-area-inset-top));
     bottom: auto;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, .82fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, .7fr) minmax(0, 1.6fr);
     align-items: stretch;
     gap: 8px;
   }
@@ -1272,7 +1272,8 @@
 
   .app-shell.has-door-controls .door-lock-controls {
     min-width: 0;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
   }
 
@@ -1296,6 +1297,21 @@
   .app-shell.has-door-controls .nuki-state small {
     line-height: 1.1;
     white-space: nowrap;
+  }
+}
+
+@media (max-width: 500px) {
+  .app-shell.has-door-controls .door-controls-fab {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+  }
+
+  .app-shell.has-door-controls .door-lock-controls,
+  .app-shell.has-door-controls .nuki-state {
+    grid-column: 1 / -1;
+  }
+
+  .app-shell.has-door-controls > main {
+    padding-top: calc(164px + env(safe-area-inset-top));
   }
 }
 
