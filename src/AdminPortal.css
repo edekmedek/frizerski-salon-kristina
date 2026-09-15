@@ -1137,12 +1137,19 @@
 }
 
 .video-doorbell-fab,
-.door-open-placeholder {
+.door-open-placeholder,
+.door-lock-button {
   min-height: 46px;
   padding: 11px 17px;
   border-radius: 999px;
   font-weight: 700;
   box-shadow: 0 9px 24px #6c3d2d38;
+}
+
+.door-lock-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
 }
 
 .boiler-control {
@@ -1211,6 +1218,13 @@
   cursor: pointer;
 }
 
+.door-lock-button {
+  border: 1px solid #8f5541;
+  background: #f7f2ee;
+  color: #714533;
+  cursor: pointer;
+}
+
 .app-shell.has-door-controls > main {
   padding-top: calc(78px + env(safe-area-inset-top));
 }
@@ -1231,7 +1245,8 @@
 
   .app-shell.has-door-controls .boiler-control,
   .app-shell.has-door-controls .video-doorbell-fab,
-  .app-shell.has-door-controls .door-open-placeholder {
+  .app-shell.has-door-controls .door-open-placeholder,
+  .app-shell.has-door-controls .door-lock-button {
     min-width: 0;
     min-height: 42px;
   }
@@ -1244,7 +1259,8 @@
   .app-shell.has-door-controls .boiler-status,
   .app-shell.has-door-controls .boiler-action,
   .app-shell.has-door-controls .video-doorbell-fab,
-  .app-shell.has-door-controls .door-open-placeholder {
+  .app-shell.has-door-controls .door-open-placeholder,
+  .app-shell.has-door-controls .door-lock-button {
     overflow: hidden;
     width: 100%;
     padding: 3px 4px;
@@ -1252,6 +1268,12 @@
     line-height: 1.1;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .app-shell.has-door-controls .door-lock-controls {
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .app-shell.has-door-controls .boiler-action {
@@ -1288,6 +1310,15 @@
 
 .door-open-placeholder:focus-visible {
   outline: 3px solid #b9afa8;
+  outline-offset: 3px;
+}
+
+.door-lock-button:hover {
+  background: #eee3dc;
+}
+
+.door-lock-button:focus-visible {
+  outline: 3px solid #b98974;
   outline-offset: 3px;
 }
 

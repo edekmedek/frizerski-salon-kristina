@@ -124,15 +124,19 @@ intent://boiler/<command>#Intent;scheme=salonkristina;package=hr.salon.kristina.
 
 #### Nuki door button
 
-- Button label and appearance at this checkpoint: `🔓 Otvori vrata`.
-- It is wired directly in `AdminApp.tsx` with:
+- Door controls at this checkpoint: `🔓 Otvori vrata` and `🔒 Zaključaj vrata`.
+- With Supabase configured, both controls use the durable hardware gateway queue. `Otvori vrata`
+  enqueues `nuki/unlock` (executed by Companion as OPEN_DOOR/unlatch with the existing 20-second
+  auto-lock), while `Zaključaj vrata` enqueues `nuki/lock`.
+- The existing local-tablet fallback for `Otvori vrata` remains wired directly in `AdminApp.tsx` with:
 
 ```ts
 window.location.href = 'salonkristina://nuki/unlock'
 ```
 
-- The button is not marked `aria-disabled`.
-- This web-to-deep-link wiring builds and tests successfully, but the physical Nuki motor action has deliberately not yet been tested.
+- The manual lock control deliberately has no deep-link fallback; it requires the authenticated
+  gateway flow. Companion executes LOCK and reads the real keyturner state before the shared state
+  can be displayed as `Zaključano`.
 
 Because the Nuki URL is a plain custom scheme rather than an `intent://` URL with a package, Android could show an app chooser if another installed application registered the same scheme. It is invoked synchronously from a user click, which is the browser-compatible way to request an external-app launch.
 

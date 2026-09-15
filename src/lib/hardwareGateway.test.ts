@@ -6,6 +6,7 @@ describe('hardware gateway contracts', () => {
     expect(isHardwareAction('camera', 'open_live')).toBe(true)
     expect(isHardwareAction('boiler', 'on')).toBe(true)
     expect(isHardwareAction('nuki', 'unlock')).toBe(true)
+    expect(isHardwareAction('nuki', 'lock')).toBe(true)
     expect(isHardwareAction('camera', 'unlock')).toBe(false)
     expect(isHardwareAction('nuki', 'on')).toBe(false)
   })
