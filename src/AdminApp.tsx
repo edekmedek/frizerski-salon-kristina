@@ -1671,7 +1671,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       {isSupportedSalonTablet() && <button className="video-doorbell-fab" type="button" disabled={hardwareBusy === 'camera'} onClick={openVideoDoorbell}>Kamera</button>}
       <div className="door-lock-controls">
         <button className="door-open-placeholder" type="button" disabled={hardwareBusy === 'nuki'} onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
-        <button className="door-lock-button" type="button" disabled={hardwareBusy === 'nuki'} onClick={lockSalonDoor}><span aria-hidden="true">🔒</span> Zaključaj vrata</button>
+        {nukiDisplay.state !== 'locked' && <button className="door-lock-button" type="button" disabled={hardwareBusy === 'nuki'} onClick={lockSalonDoor}><span aria-hidden="true">🔒</span> Zaključaj vrata</button>}
       </div>
       <div className={`nuki-state nuki-${nukiDisplay.state}`} role="status">
         {nukiDisplay.state === 'locked' ? '🔒 Zaključano'
