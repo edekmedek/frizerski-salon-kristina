@@ -38,13 +38,17 @@ export function shouldBootstrapBoilerStatus(states: HardwareDeviceState[], comma
 }
 
 export const BOILER_STATUS_BOOTSTRAP_COOLDOWN_MS = 5 * 60_000
+export const BOILER_STATE_STALE_MS = 2 * 60_000
 export const NUKI_STATE_STALE_MS = 15 * 60_000
 
 export function shouldBootstrapBoilerStatusAt(states: HardwareDeviceState[], commands: HardwareCommandState[], now: number) {
-  if (states.some(item => item.device === 'boiler'
-    && (item.state === 'on' || item.state === 'off') && item.observedAt)) return false
+  const confirmedBoiler = states.find(item => item.device === 'boiler'
+    && (item.state === 'on' || item.state === 'off'))
+  const confirmedAge = confirmedStateAge(confirmedBoiler?.observedAt ?? null, now)
+  if (confirmedAge !== null && confirmedAge <= BOILER_STATE_STALE_MS) return false
+  if (commands.some(item => item.device === 'boiler'
+    && ['queued', 'claimed', 'running'].includes(item.status))) return false
   const statusCommands = commands.filter(item => item.device === 'boiler' && item.action === 'status')
-  if (statusCommands.some(item => ['queued', 'claimed', 'running'].includes(item.status))) return false
   return !statusCommands.some(item => {
     const requestedAt = Date.parse(item.requestedAt)
     return Number.isFinite(requestedAt) && now - requestedAt < BOILER_STATUS_BOOTSTRAP_COOLDOWN_MS

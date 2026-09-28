@@ -26,13 +26,19 @@ describe('hardware gateway contracts', () => {
   })
   it('retries boiler status bootstrap after cooldown without duplicating active work', () => {
     const now = Date.parse('2026-09-13T12:00:00Z')
+    const fresh = deviceStateFromRow({ device: 'boiler', state: 'on', availability: 'available', observed_at: '2026-09-13T11:59:00Z' })
+    const stale = { ...fresh, observedAt: '2026-09-13T11:50:00Z' }
     expect(shouldBootstrapBoilerStatusAt([], [], now)).toBe(true)
+    expect(shouldBootstrapBoilerStatusAt([fresh], [], now)).toBe(false)
+    expect(shouldBootstrapBoilerStatusAt([stale], [], now)).toBe(true)
+    expect(shouldBootstrapBoilerStatusAt([{ ...fresh, observedAt: 'invalid' }], [], now)).toBe(true)
     expect(shouldBootstrapBoilerStatusAt([
       deviceStateFromRow({ device: 'boiler', state: 'unknown', availability: 'error' }),
     ], [], now)).toBe(true)
     expect(shouldBootstrapBoilerStatusAt([], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'failed', requested_at: '2026-09-13T11:58:00Z' })], now)).toBe(false)
     expect(shouldBootstrapBoilerStatusAt([], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'failed', requested_at: '2026-09-13T11:50:00Z' })], now)).toBe(true)
     expect(shouldBootstrapBoilerStatusAt([], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'status', status: 'running', requested_at: '2026-09-13T11:50:00Z' })], now)).toBe(false)
+    expect(shouldBootstrapBoilerStatusAt([stale], [commandStateFromRow({ id: 'c', device: 'boiler', action: 'on', status: 'running', requested_at: '2026-09-13T11:50:00Z' })], now)).toBe(false)
   })
   it('shows only fresh confirmed Nuki state', () => {
     const now = Date.parse('2026-09-13T12:00:00Z')

@@ -36,7 +36,7 @@ import { createTreatmentArchive, deleteTreatmentPhoto, loadTreatmentArchives, re
 import { doorbellService } from './lib/doorbellService'
 import { COMPANION_UNAVAILABLE_MESSAGE, isSupportedSalonTablet, openSalonDoorCompanion } from './lib/tapoApp'
 import { claimAutomaticBoilerStatus, consumeAutomaticBoilerRetry, consumeBoilerResult, consumeBoilerResumeSignal, readCachedBoilerState, readConfirmedBoilerState, requestBoilerCommand, supportsAutomaticBoilerStatus, type BoilerCommand, type BoilerState } from './lib/boilerApp'
-import { commandStateFromRow, confirmedStateAge, deviceStateFromRow, displayedNukiState, enqueueHardwareCommand, gatewayFromRow, gatewayIsOnline, loadHardwareGateway, shouldBootstrapBoilerStatus, subscribeToHardware, type HardwareAction, type HardwareCommandState, type HardwareDevice, type HardwareDeviceState, type HardwareGateway } from './lib/hardwareGateway'
+import { BOILER_STATE_STALE_MS, commandStateFromRow, confirmedStateAge, deviceStateFromRow, displayedNukiState, enqueueHardwareCommand, gatewayFromRow, gatewayIsOnline, loadHardwareGateway, shouldBootstrapBoilerStatus, subscribeToHardware, type HardwareAction, type HardwareCommandState, type HardwareDevice, type HardwareDeviceState, type HardwareGateway } from './lib/hardwareGateway'
 import { isTabletViewport } from './lib/tablet'
 import './Portal.css'
 import './AdminPortal.css'
@@ -1646,7 +1646,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const boilerAvailability = hardwareGateway
     ? (!gatewayOnline ? 'offline'
       : remoteBoiler?.availability === 'error' ? 'error'
-        : ageMs === null || ageMs > 120_000 ? 'stale' : 'available')
+        : ageMs === null || ageMs > BOILER_STATE_STALE_MS ? 'stale' : 'available')
     : confirmedBoilerState === 'unknown' ? 'offline' : 'stale'
   const boilerWorking = boilerBusy || hardwareBusy === 'boiler'
     || hardwareCommands.some(item => item.device === 'boiler' && ['queued', 'claimed', 'running'].includes(item.status))
