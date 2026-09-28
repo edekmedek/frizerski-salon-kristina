@@ -1152,6 +1152,13 @@
   gap: 10px;
 }
 
+.door-access {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
 .boiler-control {
   display: flex;
   align-items: stretch;
@@ -1288,6 +1295,17 @@
     grid-template-columns: 1fr;
   }
 
+  .app-shell.has-door-controls .door-access {
+    grid-column: 2 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: 12px;
+  }
+
+  .app-shell.has-door-controls .video-doorbell-fab + .door-access {
+    grid-column: auto;
+  }
+
   .app-shell.has-door-controls .boiler-action {
     border-right: 0 !important;
     border-bottom: 1px solid #d8ccc4 !important;
@@ -1298,7 +1316,6 @@
   }
 
   .app-shell.has-door-controls .nuki-state {
-    grid-column: 1 / -1;
     align-items: flex-start;
     min-width: 0;
     padding: 0 4px;
@@ -1317,8 +1334,12 @@
   }
 
   .app-shell.has-door-controls .door-lock-controls,
-  .app-shell.has-door-controls .nuki-state {
+  .app-shell.has-door-controls .door-access {
     grid-column: 1 / -1;
+  }
+
+  .app-shell.has-door-controls .door-access {
+    grid-template-columns: 1fr;
   }
 
   .app-shell.has-door-controls > main {

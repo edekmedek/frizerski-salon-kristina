@@ -1642,7 +1642,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const confirmedAt = remoteBoiler?.observedAt
     ?? (localConfirmedBoiler ? new Date(localConfirmedBoiler.confirmedAt).toISOString() : null)
   const ageMs = confirmedStateAge(confirmedAt)
-  const ageMinutes = ageMs === null ? null : Math.max(0, Math.floor(ageMs / 60_000))
   const gatewayOnline = gatewayIsOnline(hardwareGateway)
   const boilerAvailability = hardwareGateway
     ? (!gatewayOnline ? 'offline'
@@ -1663,20 +1662,22 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         <button className="boiler-status" type="button" disabled={boilerWorking} onClick={()=>runBoilerCommand('status')}>
           Bojler <span aria-hidden="true">●</span> {boilerWorking
             ? boilerOperation === 'on' ? 'UKLJUČUJEM…' : boilerOperation === 'off' ? 'ISKLJUČUJEM…' : 'PROVJERA…'
-            : confirmedBoilerState === 'on' ? `UKLJUČEN${boilerAvailability !== 'available' && ageMinutes !== null ? ` — prije ${ageMinutes} min, trenutno nepotvrđeno` : ''}`
-              : confirmedBoilerState === 'off' ? `ISKLJUČEN${boilerAvailability !== 'available' && ageMinutes !== null ? ` — prije ${ageMinutes} min, trenutno nepotvrđeno` : ''}`
+            : confirmedBoilerState === 'on' ? `UKLJUČEN${boilerAvailability !== 'available' ? ' — stanje nepotvrđeno' : ''}`
+              : confirmedBoilerState === 'off' ? `ISKLJUČEN${boilerAvailability !== 'available' ? ' — stanje nepotvrđeno' : ''}`
                 : 'STANJE NEPOZNATO'}
         </button>
       </div>
       {isSupportedSalonTablet() && <button className="video-doorbell-fab" type="button" disabled={hardwareBusy === 'camera'} onClick={openVideoDoorbell}>Kamera</button>}
-      <div className="door-lock-controls">
-        <button className="door-open-placeholder" type="button" disabled={hardwareBusy === 'nuki'} onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
-        {nukiDisplay.state !== 'locked' && <button className="door-lock-button" type="button" disabled={hardwareBusy === 'nuki'} onClick={lockSalonDoor}><span aria-hidden="true">🔒</span> Zaključaj vrata</button>}
-      </div>
-      <div className={`nuki-state nuki-${nukiDisplay.state}`} role="status">
-        {nukiDisplay.state === 'locked' ? '🔒 Zaključano'
-          : nukiDisplay.state === 'unlocked' ? '🔓 Otključano' : '⚠ Nepoznato'}
-        {nukiAgeMinutes !== null && <small>Zadnja potvrda prije {nukiAgeMinutes} min</small>}
+      <div className="door-access">
+        <div className="door-lock-controls">
+          <button className="door-open-placeholder" type="button" disabled={hardwareBusy === 'nuki'} onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
+          {nukiDisplay.state !== 'locked' && <button className="door-lock-button" type="button" disabled={hardwareBusy === 'nuki'} onClick={lockSalonDoor}><span aria-hidden="true">🔒</span> Zaključaj vrata</button>}
+        </div>
+        <div className={`nuki-state nuki-${nukiDisplay.state}`} role="status">
+          {nukiDisplay.state === 'locked' ? '🔒 Zaključano'
+            : nukiDisplay.state === 'unlocked' ? '🔓 Otključano' : '⚠ Nepoznato'}
+          {nukiAgeMinutes !== null && <small>Zadnja potvrda prije {nukiAgeMinutes} min</small>}
+        </div>
       </div>
     </div>}
     <aside className="sidebar"><div className="brand"><span className="brand-mark">K</span><div><strong>Salon Kristina</strong></div></div>
