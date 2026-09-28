@@ -1229,6 +1229,13 @@
   padding-top: calc(78px + env(safe-area-inset-top));
 }
 
+@media (min-width: 701px) and (pointer: fine) {
+  .app-shell.has-door-controls .door-controls-fab {
+    left: calc(250px + 4vw);
+    right: 4vw;
+  }
+}
+
 @media (max-width: 1100px) {
   .app-shell.has-door-controls .door-controls-fab {
     top: calc(12px + env(safe-area-inset-top));
@@ -1275,6 +1282,10 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
+  }
+
+  .app-shell.has-door-controls .door-lock-controls:has(> :only-child) {
+    grid-template-columns: 1fr;
   }
 
   .app-shell.has-door-controls .boiler-action {
