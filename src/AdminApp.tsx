@@ -1668,7 +1668,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                 : 'STANJE NEPOZNATO'}
         </button>
       </div>
-      <button className="video-doorbell-fab" type="button" disabled={hardwareBusy === 'camera'} onClick={openVideoDoorbell}>Kamera</button>
+      {isSupportedSalonTablet() && <button className="video-doorbell-fab" type="button" disabled={hardwareBusy === 'camera'} onClick={openVideoDoorbell}>Kamera</button>}
       <div className="door-lock-controls">
         <button className="door-open-placeholder" type="button" disabled={hardwareBusy === 'nuki'} onClick={showDoorLockUnavailable}><span aria-hidden="true">🔓</span> Otvori vrata</button>
         <button className="door-lock-button" type="button" disabled={hardwareBusy === 'nuki'} onClick={lockSalonDoor}><span aria-hidden="true">🔒</span> Zaključaj vrata</button>
