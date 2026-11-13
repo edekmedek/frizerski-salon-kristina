@@ -1,0 +1,33 @@
+﻿Šifra,Naziv usluge,Cijena (EUR)
+2," Aplikacija boje",5
+11,"Bojenje obrva",3
+13,"Bojenje trepavica",4
+14,"Botox 1",60
+15,"Botox 2",70
+16,"Botox 3",80
+17,"Botox 4",90
+18,"Botox 5",100
+22,"Keratin 1",70
+23,"Keratin 2",90
+24,"Keratin 3",110
+25,"Keratin 4",130
+26,"Keratin 5",150
+27,"Keratin 6",170
+28,"Keratin 7",190
+30,"Minival srednja kosa",55
+31,"Minival kratka kosa",45
+32,"Minival duga kosa",85
+40,"Pranje kose",5
+47,"Svečana frizura duga kosa",50
+48,"Svečana frizura srednja kosa ",30
+49,"Svečana frizura kratka kosa ",25
+54,"Šišanje i oblikovanje",15
+55,"Šišanje i pranje kose",14
+56,"Šišanje kose",10
+57,"Šišanje kose mašinica",7
+58,"Šišanje šiški",4
+59,"Šišanje pranje i oblikovanje",18
+63,"Vjenčana frizura duga kosa",70
+64,"Vjenčana frizura srednjaa kosa",60
+65,"Vjenčana frizura kratka kosa",50
+66,"Češljanje",4

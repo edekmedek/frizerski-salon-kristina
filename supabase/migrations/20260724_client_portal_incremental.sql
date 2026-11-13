@@ -118,21 +118,28 @@ create index if not exists client_portal_credentials_locked_idx
 
 create or replace function public.salon_normalize_phone(phone_value text)
 returns text
-language sql
+language plpgsql
 immutable
 strict
 set search_path = ''
 as $$
-  select regexp_replace(
-    case
-      when regexp_replace(phone_value, '[^0-9]', '', 'g') like '385%'
-        then '0' || substring(regexp_replace(phone_value, '[^0-9]', '', 'g') from 4)
-      else regexp_replace(phone_value, '[^0-9]', '', 'g')
-    end,
-    '[^0-9]',
-    '',
-    'g'
-  )
+declare
+  digits text;
+begin
+  digits := regexp_replace(phone_value, '[^0-9]', '', 'g');
+
+  if digits like '00%' then
+    digits := substring(digits from 3);
+  end if;
+
+  if digits like '385%' then
+    digits := '0' || substring(digits from 4);
+  elsif digits like '0385%' then
+    digits := '0' || substring(digits from 5);
+  end if;
+
+  return digits;
+end;
 $$;
 
 create or replace function public.salon_require_anonymous_client()

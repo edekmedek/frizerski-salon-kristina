@@ -1,4 +1,4 @@
-﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './App.css'
 import './ClientPicker.css'
@@ -1843,7 +1843,7 @@ function TimePicker({date,value,service,appointments,clients,editingId,allowOver
     </button>
     {open&&<div id={listboxId} className="time-options" role="listbox" aria-label="Vrijeme termina">{timeOptions.map((time,index)=>{const overlaps=conflictsByTime[index].length>0;return <button type="button" role="option" key={time} disabled={!allowOverride&&overlaps} aria-selected={time===value} className={`${time===value?'selected ':''}${overlaps?'overlap':'free'}`} onClick={()=>{onChange(time);setOpen(false);triggerRef.current?.focus()}}><span>{time}</span>{overlaps?<small>Preklapanje</small>:<b>{time===value?'Odabrano':'Slobodno'}</b>}</button>})}</div>}
     {allowOverride&&<button type="button" className="manual-time-toggle" onClick={()=>{setManual(!manual);setOpen(false)}}>{manual?'Sakrij ručni unos':'Ručno unesi vrijeme'}</button>}
-    {allowOverride&&manual&&<label className="manual-time"><span>Početak termina</span><input type="time" min="08:00" max="20:00" step="900" value={value} onChange={e=>{if(!e.target.value||timeOptions.includes(e.target.value))onChange(e.target.value)}}/><small>Samo administratorski unos, u koracima od 15 minuta.</small></label>}
+    {allowOverride&&manual&&<label className="manual-time"><span>Početak termina</span><input type="time" step="900" value={value} onChange={e=>{if(!e.target.value||timeOptions.includes(e.target.value))onChange(e.target.value)}}/><small>Samo administratorski unos, u koracima od 15 minuta.</small></label>}
     {selectedConflicts.length>0&&<div className="overlap-warning" role="alert"><strong>Upozorenje: termin se preklapa.</strong>{selectedConflicts.map(item=><span key={item.id}>{findClientName(clients,item.clientId)} · {item.service} · {item.dateTime.slice(11,16)}–{minutesToTime(timeToMinutes(item.dateTime.slice(11,16))+serviceDefinition(item.service).totalDuration)}</span>)}</div>}
   </div>
 }

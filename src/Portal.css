@@ -68,7 +68,7 @@
 .unread-message-alert{display:grid;grid-template-columns:auto 1fr auto;gap:.75rem;align-items:center;width:100%;margin-bottom:1rem;padding:1rem;border:0;border-radius:16px;background:#713d35;color:#fff;text-align:left;box-shadow:0 8px 22px #58312935;cursor:pointer}.unread-message-alert span{font-size:1.5rem}.unread-message-alert div{display:flex;flex-direction:column;gap:.15rem}.unread-message-alert small{color:#f4ddd6}.unread-message-alert b{display:grid;place-items:center;min-width:28px;height:28px;padding:0 .45rem;border-radius:50%;background:#d94d42}
 
 .salon-home-page{display:block;padding:0;background:#f6efe9}
-.access-card.salon-home{width:100%;min-height:100dvh;padding:0;border:0;border-radius:0;background:#f8f2ec;box-shadow:none}
+.access-card.salon-home{width:100%;min-height:100dvh;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 .salon-home>.portal-brand{width:min(1180px,100%);margin:0 auto;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) 18px max(20px,env(safe-area-inset-left))}
 .salon-home-content{overflow:hidden}
 .salon-home-hero,.salon-services,.salon-gallery,.salon-home-footer{width:min(1180px,100%);margin:0 auto;padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
@@ -118,4 +118,24 @@
   .salon-gallery-grid{grid-template-columns:1fr}
   .salon-gallery-grid .salon-photo-placeholder:first-child{grid-column:auto}
   .salon-home-footer{align-items:flex-start;flex-direction:column}
+}
+
+/* New luxury redesigned homepage */
+.salon-redesigned-page{display:block;padding:0;min-height:100dvh;background-image:url('/salon-hero.jpg');background-attachment:fixed;background-size:cover;background-position:center;background-repeat:no-repeat}.salon-redesigned-page::before{content:"";position:fixed;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,.5));z-index:0;pointer-events:none}.salon-redesigned-content{display:block;padding:0;min-height:100dvh;position:relative;z-index:1}.salon-redesigned-page .portal-brand{display:none}.redesigned-header{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:max(12px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) 12px max(18px,env(safe-area-inset-left));background:rgba(79,51,46,.95);backdrop-filter:blur(10px);border-bottom:1px solid rgba(212,172,157,.1)}.redesigned-logo{display:flex;align-items:center;gap:10px;color:#f4c8b3;text-decoration:none;font-weight:600}.redesigned-logo span{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:rgba(244,200,179,.15);font:600 16px 'Playfair Display'}.redesigned-logo strong{font:600 16px 'Playfair Display';color:#f4c8b3}.redesigned-nav{display:flex;align-items:center;gap:24px;margin-left:auto}.redesigned-nav button{background:transparent;border:0;color:#d7bfb5;font-size:13px;cursor:pointer;padding:0}.redesigned-nav button:hover{color:#f4c8b3}.redesigned-nav .primary{min-width:140px;min-height:38px;padding:8px 16px;border-radius:8px;background:#d4ac9d;color:#4f332e;font-weight:600}.redesigned-nav .primary:hover{background:#e5bfb0}.redesigned-hero{position:relative;display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;width:100%;overflow:hidden}.redesigned-hero-overlay{position:absolute;inset:0;background:linear-gradient(135deg,rgba(79,51,46,.4) 0%,rgba(79,51,46,.2) 100%);z-index:1}.redesigned-hero-content{position:relative;z-index:2;text-align:center;color:white;max-width:600px;padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));animation:fadeInContent .8s ease-out}@keyframes fadeInContent{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.redesigned-hero-content h1{font:700 clamp(42px,10vw,64px) 'Playfair Display';line-height:1.1;margin:0 0 16px 0;letter-spacing:-.02em;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.3)}.redesigned-hero-content p{font-size:clamp(16px,4vw,18px);line-height:1.6;margin:0 0 28px 0;color:rgba(255,255,255,.95);text-shadow:0 1px 4px rgba(0,0,0,.3)}.redesigned-booking-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:200px;min-height:52px;padding:14px 28px;border-radius:10px;background:#d4ac9d;color:#4f332e;border:0;font:600 15px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:all .3s ease;box-shadow:0 8px 24px rgba(0,0,0,.2)}.redesigned-booking-button:hover{background:#e5bfb0;transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.25)}.redesigned-booking-button:active{transform:translateY(0)}.redesigned-content-section{padding:max(54px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) 54px max(20px,env(safe-area-inset-left));width:min(1160px,100%);margin:0 auto;background:transparent}.redesigned-content-section h2{font:600 clamp(32px,8vw,48px) 'Playfair Display';margin:0 0 24px 0;line-height:1.15;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.45)}.redesigned-content-section p{color:rgba(255,255,255,.92);line-height:1.65;font-size:16px;text-shadow:0 1px 6px rgba(0,0,0,.4)}/* Redesigned footer */
+.redesigned-footer{padding:40px max(20px,env(safe-area-inset-right)) max(30px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));color:rgba(255,255,255,.82);border-top:1px solid rgba(255,255,255,.18);text-align:center;background:transparent}
+.redesigned-footer p{margin:8px 0}
+.redesigned-footer strong{display:block;color:#fff;font:600 16px 'Playfair Display';margin-bottom:8px;text-shadow:0 1px 6px rgba(0,0,0,.4)}
+.redesigned-footer-links{display:flex;justify-content:center;gap:16px;margin-top:20px;font-size:12px;opacity:.72}
+.redesigned-footer-links button{background:transparent;border:0;color:rgba(255,255,255,.75);cursor:pointer;padding:0;font-weight:400}
+.redesigned-footer-links button:hover{color:#a65f44}
+.redesigned-footer-links span{color:var(--line)}
+@media(max-width:600px){
+  .redesigned-nav{gap:12px}
+  .redesigned-nav button{font-size:12px}
+  .redesigned-nav .primary{min-width:120px;min-height:36px;padding:6px 12px;font-size:12px}
+  .redesigned-hero{min-height:100vh;min-height:100dvh}
+  .redesigned-hero-content{padding-top:max(24px,env(safe-area-inset-top))}
+  .redesigned-booking-button{min-width:160px;min-height:44px;font-size:14px}
+  .redesigned-content-section{padding:40px 20px}
+  .redesigned-footer-links{flex-direction:column;gap:8px}
 }
