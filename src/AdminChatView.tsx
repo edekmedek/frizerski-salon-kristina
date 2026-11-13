@@ -10,10 +10,11 @@ interface Props {
   onReply: (message: AdminMessage, reply: string) => Promise<boolean>
   onNew: (clientId: string, message: string) => Promise<boolean>
   onDelete: (message: AdminMessage) => Promise<boolean>
+  onApproveRegistration?: (message: AdminMessage) => Promise<boolean>
   onClose: () => void
 }
 
-export function AdminChatView({ messages, selected, busy, clients, onOpen, onReply, onNew, onDelete, onClose }: Props) {
+export function AdminChatView({ messages, selected, busy, clients, onOpen, onReply, onNew, onDelete, onApproveRegistration, onClose }: Props) {
   const [reply, setReply] = useState('')
   const [composing, setComposing] = useState(false)
   const [newClientId, setNewClientId] = useState('')
@@ -68,7 +69,7 @@ export function AdminChatView({ messages, selected, busy, clients, onOpen, onRep
 
   if (selected) {
     return <section className="admin-card admin-chat">
-      <header className="admin-chat-header"><button className="secondary" type="button" onClick={onClose}>← Poruke</button><div><h2>{selected.clientName}</h2><p>{selected.clientPhone}</p></div></header>
+      <header className="admin-chat-header"><button className="secondary" type="button" onClick={onClose}>← Poruke</button><div><h2>{selected.clientName}</h2><p>{selected.clientPhone}</p></div>{onApproveRegistration && selected.subject.toLowerCase() === 'novi zahtjev za registraciju' && <button className="primary" type="button" disabled={busy} onClick={() => void onApproveRegistration(selected)}>Odobri registraciju</button>}</header>
       <div className="chat-thread" ref={threadRef} onScroll={event => {
         const thread = event.currentTarget
         nearBottomRef.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 80

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './App.css'
 import './ClientPicker.css'
@@ -1024,6 +1024,22 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     return true
   }
 
+  async function approveClientRegistration(message: AdminMessage) {
+    if (!supabase) return false
+    setInboxBusy(true)
+    const { error } = await supabase.rpc('admin_approve_client_registration', { target_client_id: message.clientId })
+    if (error) {
+      setInboxBusy(false)
+      setNotice('Registracija nije odobrena.')
+      return false
+    }
+    const pushOutcome = await sendClientPush(message.clientId, `client-registration-approved-${message.clientId}`)
+    setInboxBusy(false)
+    await loadAdminInbox()
+    setNotice(savedMessagePushNotice(pushOutcome))
+    return true
+  }
+
   async function deleteAdminMessage(message: AdminMessage) {
     if (!supabase) return false
     setInboxBusy(true)
@@ -1719,7 +1735,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         onDelete={deleteAdminRequest}
         onClose={()=>setSelectedAdminRequest(undefined)}
       />}
-      {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onClose={()=>setSelectedAdminMessage(undefined)}/>}
+      {view === 'poruke-live' && <AdminChatView messages={adminMessages} selected={selectedAdminMessage} busy={inboxBusy} clients={data.clients} onOpen={openAdminMessage} onReply={replyToAdminMessage} onNew={sendNewAdminMessage} onDelete={deleteAdminMessage} onApproveRegistration={approveClientRegistration} onClose={()=>setSelectedAdminMessage(undefined)}/>}
     </main>
     <div className="mobile-nav">{nav.map(item => {const count=item.id==='poruke-live'?inboxCounts.messages:item.id==='zahtjevi-live'?inboxCounts.requests:0;return <button key={item.id} className={view===item.id?'active':''} onClick={() => changeView(item.id)}><span>{item.icon}</span>{item.label}{count>0&&<b className="nav-count">{count}</b>}</button>})}</div>{notice&&<div className="toast">{notice}</div>}
     {movingAppointment&&<MovingAppointment appointment={movingAppointment} selectedDate={selectedCalendarDate} onChange={setMovingAppointment} onDateChange={setSelectedCalendarDate} onEdit={()=>{setAppointmentPlaced(true);setAppointmentForm(movingAppointment);setMovingAppointment(null)}} onCancel={()=>setMovingAppointment(null)}/>}
