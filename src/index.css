@@ -1,2 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600&display=swap');
 :root{font-family:'DM Sans',sans-serif;color:#392d29;background:#f7f1eb;font-synthesis:none;text-rendering:optimizeLegibility}*{box-sizing:border-box}body{margin:0;min-width:320px;min-height:100vh}button,input,select,textarea{font:inherit}button{cursor:pointer}a{color:inherit}
+
+.app-shell,.client-portal{background-image:linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),url('/salon-hero.jpg')!important;background-size:cover!important;background-position:center!important;background-attachment:fixed!important;min-height:100dvh}
+
+.app-shell > main > .eyebrow,.app-shell > main > h1,.app-shell > main > h2{display:none!important}
+.app-shell .day-schedule{background:rgba(255,250,246,.72)!important}
+.app-shell .day-calendar,.app-shell .calendar-scroll,.app-shell .calendar-grid{background:rgba(255,255,255,.50)!important}
+.app-shell .calendar-time-axis{background:rgba(255,250,246,.65)!important}
+
+.app-shell > main > header > div:first-child{display:none!important}.app-shell .day-schedule,.app-shell .calendar-scroll,.app-shell .day-calendar,.app-shell .calendar-grid,.app-shell .calendar-time-axis{background-color:rgba(255,250,246,.68)!important;background-image:none!important}.app-shell .calendar-grid{background:rgba(255,250,246,.68)!important}
+
+.app-shell .day-schedule .calendar-scroll,.app-shell .day-schedule .day-calendar,.app-shell .day-schedule .calendar-grid,.app-shell .day-schedule .calendar-time-axis{background:rgba(255,250,246,.25)!important;box-shadow:none!important}.app-shell .day-schedule .calendar-grid::before,.app-shell .day-schedule .calendar-grid::after{background:transparent!important}
+
+.client-portal button{font-size:15px!important}.client-portal nav button,.client-portal [role="tab"]{font-size:15px!important}.client-portal .dashboard-stats,.client-portal .dashboard-stats *{font-size:15px!important}.client-portal button small,.client-portal button span{font-size:inherit!important}
+
+.client-portal nav button,.client-portal [role="tab"],.client-portal .dashboard-stats,.client-portal .dashboard-stats *{font-size:18px!important}.client-portal nav button,.client-portal [role="tab"]{font-weight:600!important}.client-portal .dashboard-stats{line-height:1.4!important}
+
+.client-portal .client-nav{background:transparent!important;border:0!important;box-shadow:none!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px!important}.client-portal .client-nav button{background:rgba(255,250,246,.25)!important;border-radius:9px!important;color:#fff!important;font-size:18px!important;font-weight:600!important;text-shadow:0 1px 3px rgba(0,0,0,.8)!important}.client-portal .client-nav button.active{background:rgba(95,56,44,.8)!important}.client-portal .client-card-section,.client-portal .client-content>section,.client-portal .client-content .client-card,.client-portal .client-content .client-stat,.client-portal .client-content .client-stats>*,.client-portal .client-content .client-summary-card{background:rgba(255,250,246,.25)!important}.client-portal .client-content{color:#241b18!important}
+
+.client-portal .client-content button:not(.client-nav button):not(.primary),.client-portal .client-content .client-stat,.client-portal .client-content .client-stats > *{background:rgba(255,250,246,.25)!important;color:#241b18!important}.client-portal .client-content button:not(.primary){border-color:rgba(255,255,255,.45)!important}

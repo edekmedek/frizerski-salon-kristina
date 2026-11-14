@@ -13,6 +13,7 @@ import './KeyboardViewport.css'
 
 function App() {
   useKeyboardViewport()
+  const isPasswordRecovery = new URLSearchParams(window.location.search).has('admin-recovery') || window.location.hash.includes('admin-recovery')
   const [session, setSession] = useState<PortalSession | null>(null)
   const [restoringSession, setRestoringSession] = useState(true)
   const [accessIssue, setAccessIssue] = useState('')
@@ -37,6 +38,7 @@ function App() {
     let active = true
 
     async function restoreSupabaseSession(authSession: Session | null, source: string) {
+      if (isPasswordRecovery) { setSession(null); setAccessIssue(''); setRestoringSession(false); return }
       const requestId = ++authRequestRef.current
       const user = authSession?.user
       console.info('[auth]', source, {
@@ -109,7 +111,7 @@ function App() {
         hasSession: Boolean(authSession),
         userId: authSession?.user.id ?? null,
       })
-      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_OUT') {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_OUT') {
         window.setTimeout(() => void restoreSupabaseSession(authSession, event), 0)
       }
     })

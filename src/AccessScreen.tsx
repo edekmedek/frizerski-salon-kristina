@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import { adminLoginErrorMessage, adminRecoveryRedirect, adminRoleErrorMessage } from './lib/adminAuth'
 import { pricingData } from './lib/pricingData'
 import { PricingPage } from './PricingPage'
+import { SalonGallery } from './SalonGallery'
 import './Portal.css'
 
 type AccessMode = 'home' | 'home-redesigned' | 'pricing' | 'admin' | 'admin-recovery' | 'admin-reset-password' | 'client' | 'activate' | 'change-pin' | 'register'
@@ -40,12 +41,13 @@ export function AccessScreen() {
   const [pinConfirm, setPinConfirm] = useState('')
   const [registerOffer, setRegisterOffer] = useState(false)
   const [temporaryPin, setTemporaryPin] = useState('')
-  const [adminEmail, setAdminEmail] = useState('')
+  const [adminEmail, setAdminEmail] = useState('edekmedek@gmail.com')
   const [adminPassword, setAdminPassword] = useState('')
   const [clientId, setClientId] = useState('')
   const [message, setMessage] = useState('')
   const [working, setWorking] = useState(false)
   const [recoveryReady, setRecoveryReady] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   useEffect(() => {
     if (!supabase || !recoveryRequested) return
@@ -307,12 +309,17 @@ export function AccessScreen() {
     {mode === 'home-redesigned' && <div className="salon-redesigned-content">
       <section className="redesigned-hero">
         <div className="redesigned-hero-overlay"></div>
-        <div className="redesigned-hero-content">
+        <div className="redesigned-hero-content"><div className="hero-floating-photos" aria-hidden="true"><img src="/hero-radovi/rad-1.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-2.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-3.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-4.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-5.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-6.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-7.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-8.jpg" alt="" loading="lazy" decoding="async" /><img src="/hero-radovi/rad-9.jpg" alt="" loading="lazy" decoding="async" /></div><img className="redesigned-kristina-avatar" src="/kristina-karikatura.jpeg" alt="Karikatura Kristine" />
           <h1>Frizerski salon Kristina</h1>
           <p>Mjesto posvećeno lijepoj, njegovanoj kosi i frizuri u kojoj ćete se osjećati kao svoji.</p>
-          <button className="redesigned-booking-button" onClick={() => setMode('client')}>
-            Rezerviraj termin
-          </button>
+          <div className="hero-buttons-container">
+            <button className="redesigned-booking-button" onClick={() => setMode('client')}>
+              Rezerviraj termin
+            </button>
+            <button className="redesigned-gallery-button" onClick={() => setGalleryOpen(true)}>
+              Galerija
+            </button>
+          </div>
         </div>
       </section>
 
@@ -345,12 +352,13 @@ export function AccessScreen() {
       </footer>
     </div>}
     {mode === 'pricing' && <PricingPage pricingData={pricingData} onClose={() => setMode('home-redesigned')} />}
-    {mode === 'admin' && <form onSubmit={event => void enterAdmin(event)}><h1>Kristinin ulaz</h1><label>E-mail<input type="email" autoComplete="username" required value={adminEmail} onChange={event => setAdminEmail(event.target.value)}/></label><label>Lozinka<input type="password" autoComplete="current-password" required value={adminPassword} onChange={event => setAdminPassword(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button><button className="link" type="button" onClick={()=>{setMode('admin-recovery');setMessage('');setAdminPassword('')}}>Zaboravljena lozinka?</button>    <button className="link" type="button" onClick={() => {setMode('home-redesigned');setMessage('')}}>Natrag</button></form>}
+    {mode === 'admin' && <form onSubmit={event => void enterAdmin(event)}><h1>Kristinin ulaz</h1><label>Lozinka<input type="password" autoComplete="current-password" required value={adminPassword} onChange={event => setAdminPassword(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button>    <button className="link" type="button" onClick={() => {setMode('home-redesigned');setMessage('')}}>Natrag</button></form>}
     {mode === 'admin-recovery' && <form onSubmit={event=>void requestAdminRecovery(event)}><h1>Nova administratorska lozinka</h1><p>Upišite e-mail računa. Poslat ćemo sigurnu poveznicu za postavljanje nove lozinke.</p><label>E-mail<input type="email" autoComplete="email" required value={adminEmail} onChange={event=>setAdminEmail(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Slanje…':'Pošalji poveznicu'}</button><button className="link" type="button" onClick={()=>{setMode('admin');setMessage('')}}>Natrag na prijavu</button></form>}
     {mode === 'admin-reset-password' && <form onSubmit={event=>void setRecoveredPassword(event)}><h1>Postavite novu lozinku</h1>{!recoveryReady&&<p className="important-note">Provjera sigurnosne poveznice…</p>}<label>Nova lozinka<input type="password" autoComplete="new-password" minLength={8} required disabled={!recoveryReady} value={adminPassword} onChange={event=>setAdminPassword(event.target.value)}/></label><label>Ponovite novu lozinku<input type="password" autoComplete="new-password" minLength={8} required disabled={!recoveryReady} value={pinConfirm} onChange={event=>setPinConfirm(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working||!recoveryReady} type="submit">{working?'Spremanje…':'Spremi novu lozinku'}</button></form>}
     {mode === 'client' && <form onSubmit={event=>void loginClient(event)}><h1>Ulaz za klijente</h1><p>Prijavite se brojem mobitela i četveroznamenkastim PIN-om.</p><label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event=>setPhone(event.target.value)}/></label><label>PIN<input type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}{registerOffer&&<div className="registration-offer"><button className="link" type="button" onClick={()=>{setMode('register');setRegisterOffer(false);setMessage('')}}>Registriraj se</button><button className="link" type="button" onClick={()=>{setRegisterOffer(false);setPin('');setMessage('Ispravite broj mobitela.')}}>Ispravi broj</button><button className="link" type="button" onClick={()=>{setMode('home-redesigned');setRegisterOffer(false);setMessage('');setPhone('');setPin('')}}>Povratak na prijavu</button></div>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button><button className="link" type="button" onClick={()=>{setMode('register');setRegisterOffer(false);setMessage('')}}>Registriraj se</button><button className="link" type="button" onClick={()=>{setMode('home-redesigned');setMessage('');setRegisterOffer(false)}}>Natrag</button></form>}
     {mode === 'activate' && <form onSubmit={event=>void activatePortal(event)}><h1>Aktivirajte pristup</h1><p>Unesite svoj broj mobitela i odaberite stalni četveroznamenkasti PIN.</p><label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event=>setPhone(event.target.value)}/></label><label>Novi PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,4))}/></label><label>Potvrdite PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pinConfirm} onChange={event=>setPinConfirm(event.target.value.replace(/\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Aktivacija…':'Aktiviraj portal'}</button></form>}
     {mode === 'change-pin' && <form onSubmit={event=>void changeTemporaryPin(event)}><h1>Postavite stalni PIN</h1><p className="important-note">Prije nastavka morate zamijeniti privremeni PIN.</p><label>Novi stalni PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\\D/g,'').slice(0,4))}/></label><label>Potvrdite PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pinConfirm} onChange={event=>setPinConfirm(event.target.value.replace(/\\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Spremanje…':'Spremi stalni PIN'}</button></form>}
     {mode === 'register' && <form onSubmit={event=>void registerClient(event)}><h1>Registracija klijenta</h1><p>Registrirajte se imenom, prezimenom, brojem mobitela i četveroznamenkastim PIN-om.</p><label>Ime<input type="text" autoComplete="given-name" required value={firstName} onChange={event=>setFirstName(event.target.value)}/></label><label>Prezime<input type="text" autoComplete="family-name" required value={lastName} onChange={event=>setLastName(event.target.value)}/></label><label>Broj mobitela<input type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event=>setPhone(event.target.value)}/></label><label>PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pin} onChange={event=>setPin(event.target.value.replace(/\\D/g,'').slice(0,4))}/></label><label>Potvrdite PIN<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} required value={pinConfirm} onChange={event=>setPinConfirm(event.target.value.replace(/\\D/g,'').slice(0,4))}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Registracija…':'Registriraj se'}</button><button className="link" type="button" onClick={()=>{setMode('client');setMessage('');setRegisterOffer(false)}}>Natrag na prijavu</button></form>}
+    <SalonGallery isOpen={galleryOpen} onClose={() => setGalleryOpen(false)} />
   </section></main>
 }
