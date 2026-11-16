@@ -115,7 +115,13 @@ i provjera PIN-a moraju ostati serverske operacije s ograničenjem pokušaja.
 `service_categories` sadrži `code`, naziv, aktivnost i redoslijed.
 `services` sadrži kategoriju, naziv, cijenu, `duration_minutes`, aktivnost,
 `is_bookable`, izvorni kod i redoslijed. Administratorski RPC-ovi upravljaju
-cjenikom, a read-only viewovi služe klijentskom prikazu i izboru termina.
+uslugama za termine, a read-only view služi izboru termina.
+
+Javni i klijentski prikaz službenog cjenika te CSV preuzimanje koriste isti
+izvor `src/lib/officialPrices.ts`, usklađen s `cjenik kristina.xlsx`: bazne
+cijene na 10. 9. 2026. i aktualne cijene od 15. 11. 2026. Promjene usluga u
+administraciji ne mijenjaju automatski taj prikaz. Stari statički
+`public/cjenik.csv` zamijenjen je CSV preuzimanjem iz zajedničkog izvora.
 
 ### Ciljni model
 

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { setPortalSession } from './lib/portalStorage'
 import { supabase } from './lib/supabase'
 import { adminLoginErrorMessage, adminRecoveryRedirect, adminRoleErrorMessage } from './lib/adminAuth'
-import { pricingData } from './lib/pricingData'
 import { PricingPage } from './PricingPage'
 import { SalonGallery } from './SalonGallery'
 import './Portal.css'
@@ -351,7 +350,7 @@ export function AccessScreen() {
         </div>
       </footer>
     </div>}
-    {mode === 'pricing' && <PricingPage pricingData={pricingData} onClose={() => setMode('home-redesigned')} />}
+    {mode === 'pricing' && <PricingPage onClose={() => setMode('home-redesigned')} />}
     {mode === 'admin' && <form onSubmit={event => void enterAdmin(event)}><h1>Kristinin ulaz</h1><label>Lozinka<input type="password" autoComplete="current-password" required value={adminPassword} onChange={event => setAdminPassword(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Prijava…':'Prijavi se'}</button>    <button className="link" type="button" onClick={() => {setMode('home-redesigned');setMessage('')}}>Natrag</button></form>}
     {mode === 'admin-recovery' && <form onSubmit={event=>void requestAdminRecovery(event)}><h1>Nova administratorska lozinka</h1><p>Upišite e-mail računa. Poslat ćemo sigurnu poveznicu za postavljanje nove lozinke.</p><label>E-mail<input type="email" autoComplete="email" required value={adminEmail} onChange={event=>setAdminEmail(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working} type="submit">{working?'Slanje…':'Pošalji poveznicu'}</button><button className="link" type="button" onClick={()=>{setMode('admin');setMessage('')}}>Natrag na prijavu</button></form>}
     {mode === 'admin-reset-password' && <form onSubmit={event=>void setRecoveredPassword(event)}><h1>Postavite novu lozinku</h1>{!recoveryReady&&<p className="important-note">Provjera sigurnosne poveznice…</p>}<label>Nova lozinka<input type="password" autoComplete="new-password" minLength={8} required disabled={!recoveryReady} value={adminPassword} onChange={event=>setAdminPassword(event.target.value)}/></label><label>Ponovite novu lozinku<input type="password" autoComplete="new-password" minLength={8} required disabled={!recoveryReady} value={pinConfirm} onChange={event=>setPinConfirm(event.target.value)}/></label>{message&&<p className="form-message" role="alert">{message}</p>}<button className="primary" disabled={working||!recoveryReady} type="submit">{working?'Spremanje…':'Spremi novu lozinku'}</button></form>}

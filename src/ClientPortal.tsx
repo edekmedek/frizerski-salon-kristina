@@ -1,5 +1,5 @@
-import { officialPrices, formatPrice } from './lib/officialPrices'
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { PriceTable } from './PricingPage'
 import { formatDate, formatDateTime } from './lib/date'
 import { supabase } from './lib/supabase'
 import { requestStatusLabel } from './lib/adminInbox'
@@ -44,7 +44,6 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [messages, setMessages] = useState<MessageRow[]>([])
   const [, setReminders] = useState<ReminderRow[]>([])
   const [photos, setPhotos] = useState<ClientPhoto[]>([])
-  const [, setPriceList] = useState<PublicService[]>([])
   const [bookableServices, setBookableServices] = useState<PublicService[]>([])
   const [requestCategory, setRequestCategory] = useState('')
   const [requestServiceIds, setRequestServiceIds] = useState<string[]>([])
@@ -205,14 +204,13 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       const supabaseClient = supabase
       if (!supabaseClient) return
       trackSupabaseCall('client.initialLoad')
-      const [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult, pricesResult, bookableResult] = await Promise.all([
+      const [clientResult, appointmentResult, requestResult, messageResult, reminderResult, photoResult, bookableResult] = await Promise.all([
         supabaseClient.from('clients').select('id,first_name,last_name').eq('id', clientId).maybeSingle(),
         supabaseClient.from('appointments').select('id,starts_at,ends_at,service,service_name_snapshot,service_price_snapshot,service_duration_snapshot,notes,status,confirmation_status').eq('client_id', clientId),
         supabaseClient.from('client_requests').select('id,kind,service,preferred_dates,day_period,client_message,status,admin_reply,client_reply,proposed_starts_at,proposed_duration_minutes,appointment_id,created_at,updated_at').eq('client_id', clientId),
         supabaseClient.from('messages').select('id,sender,subject,message,is_read,read_at,client_read_at,created_at').eq('client_id', clientId).eq('deleted_by_client', false).order('created_at', { ascending: false }),
         supabaseClient.from('appointment_reminders').select('id,title,body,scheduled_for,status').eq('client_id', clientId).eq('status', 'delivered').order('scheduled_for', { ascending: false }),
         supabaseClient.from('treatment_photo_sets').select('id,client_id,notes,taken_at,visible_to_client,treatment_photos(id,image_path,thumbnail_path,phase,sort_order)').eq('client_id', clientId).eq('visible_to_client', true).order('taken_at', { ascending: false }),
-        supabaseClient.from('active_service_prices').select('category_name,name,price'),
         supabaseClient.from('bookable_service_prices').select('id,category_name,name,price,duration_minutes'),
       ])
       console.info('[client-portal] client account lookup', {
@@ -255,7 +253,6 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         ['messages', messageResult],
         ['appointment_reminders', reminderResult],
         ['treatment_photo_sets', photoResult],
-        ['active_service_prices', pricesResult],
         ['bookable_service_prices', bookableResult],
       ] as const
       const failedResult = portalResults.find(([, result]) => result.error)
@@ -293,7 +290,6 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
       messagesInitializedRef.current = true
       setReminders((reminderResult.data ?? []) as ReminderRow[])
       setPhotos(signedPhotos.filter(photo => photo.url))
-      setPriceList((pricesResult.data ?? []).map(item=>({categoryName:item.category_name,name:item.name,price:Number(item.price)})))
       setBookableServices((bookableResult.data ?? []).map(item=>({id:item.id,categoryName:item.category_name,name:item.name,price:Number(item.price),durationMinutes:item.duration_minutes??undefined})))
       setLoading(false)
     }
@@ -561,7 +557,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const requestCategories = [...new Set(bookableServices.map(item=>item.categoryName))]
   return <div className="client-portal">
     <header className="client-header"><div><p className="eyebrow">SALON KRISTINA</p><h1>Pozdrav, {client.first_name}</h1></div><button className="secondary" onClick={onLogout}>Odjava</button></header>
-    <nav className="client-nav"><button className={section==='home'?'active':''} onClick={()=>setSection('home')}>Pregled</button><button className={section==='appointments'?'active':''} onClick={()=>setSection('appointments')}>Termini</button><button className={section==='messages'?'active':''} onClick={()=>setSection('messages')}>Poruke{inboxCount>0&&<b className="client-nav-count">{inboxCount}</b>}</button><button className={section==='photos'?'active':''} onClick={()=>setSection('photos')}>Fotografije</button></nav>
+    <nav className="client-nav"><button className={section==='home'?'active':''} onClick={()=>setSection('home')}>Pregled</button><button className={section==='appointments'?'active':''} onClick={()=>setSection('appointments')}>Termini</button><button className={section==='prices'?'active':''} onClick={()=>setSection('prices')}>Cjenik</button><button className={section==='messages'?'active':''} onClick={()=>setSection('messages')}>Poruke{inboxCount>0&&<b className="client-nav-count">{inboxCount}</b>}</button><button className={section==='photos'?'active':''} onClick={()=>setSection('photos')}>Fotografije</button></nav>
     <main className="client-content">
       {notice&&<p className="portal-notice" role="status">{notice}</p>}
       {section==='home'&&inboxCount>0&&<button className="unread-message-alert" type="button" onClick={()=>setSection('messages')}><span>💬</span><div><strong>{inboxCount===1?'Imate novu poruku':`Imate ${inboxCount} nove poruke`}</strong><small>Dodirnite za pregled poruka</small></div><b>{inboxCount}</b></button>}
@@ -576,7 +572,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
         <div className="client-request-submit-bar"><button className="primary" type="submit">Pošalji Kristini</button><button className="secondary" type="button" onClick={()=>{setRequestCategory('');setSection('home')}}>Odustani</button></div>
       </form></section>}
       {section==='appointments'&&<section className="client-card-section"><h2>Moji budući termini</h2>{upcoming.length?<div className="portal-list">{upcoming.map(item=><button key={item.id} onClick={()=>setDetail(item)}><div><strong>{formatDateTime(item.starts_at)}</strong><span>{appointmentService(item)}</span></div><b>Potvrđeno</b></button>)}</div>:<p className="empty-state">Nema budućih potvrđenih termina.</p>}</section>}
-      {section==='prices'&&<section className="client-card-section client-price-section"><h2>CJENIK FRIZERSKIH USLUGA</h2><p>Frizerski salon „KRISTINA”, Školska 18, Pušćine, 40305 Nedelišće</p><p>Vl: Kristina Jalušić</p><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px',minWidth:'780px'}}><thead><tr>{[0,1].map(side=><Fragment key={side}><th style={{textAlign:'left',padding:'10px 5px'}}>Usluga</th><th style={{textAlign:'right',padding:'10px 5px'}}>Bazna cijena<br/>10. 09. 2026.</th><th style={{textAlign:'right',padding:'10px 5px'}}>Cijena od<br/>15. 11. 2026.</th></Fragment>)}</tr></thead><tbody>{officialPrices.slice(0,32).map((left,index)=>{const right=officialPrices[index+32];return <tr key={left.name} style={{borderTop:'1px solid var(--border, #ddd)'}}>{[left,right].map(item=><Fragment key={item.name}><td style={{padding:'8px 5px'}}>{item.name}</td><td style={{padding:'8px 5px',textAlign:'right',whiteSpace:'nowrap'}}>{formatPrice(item.base)}</td><td style={{padding:'8px 5px',textAlign:'right',whiteSpace:'nowrap',fontWeight:700}}>{formatPrice(item.current)}</td></Fragment>)}</tr>})}</tbody></table></div><p className="privacy-note">U cijene su uključeni svi porezi.</p></section>}
+      {section==='prices'&&<section className="client-card-section client-price-section"><h2>Cjenik frizerskih usluga</h2><PriceTable /><p className="privacy-note">U cijene su uključeni svi porezi.</p></section>}
       {section==='messages'&&<section className="client-card-section client-chat"><h2>Poruke s Kristinom</h2><div className="chat-thread">{[...messages].reverse().map(item=><article className={`chat-bubble ${item.sender} ${highlightedMessageIds.includes(item.id)?'new-message':''}`} key={item.id}>{item.subject&&item.subject!=='Poruka klijenta'&&<strong>{item.subject}</strong>}<p>{item.message}</p><footer><span>{formatDateTime(item.created_at)}</span>{item.sender==='client'&&<span className={item.read_at?'read-receipt read':'read-receipt'}>{item.read_at?'✓✓ Pročitano':'✓ Poslano'}</span>}<button type="button" onClick={()=>void deleteClientMessage(item)}>Obriši</button></footer></article>)}{!messages.length&&<p className="empty-state">Još nema poruka. Ovdje možete izravno pisati Kristini.</p>}</div><form className="chat-composer" onSubmit={event=>void sendClientMessage(event)}><textarea rows={2} value={messageDraft} onChange={event=>setMessageDraft(event.target.value)} placeholder="Napiši poruku…"/><button className="primary" disabled={messageBusy||!messageDraft.trim()} type="submit">{messageBusy?'Šaljem…':'Pošalji'}</button></form></section>}
       {section==='notifications'&&<section className="client-card-section notification-check"><button className="link" type="button" onClick={()=>setSection('home')}>← Natrag</button><h2>Provjera obavijesti</h2><p>Prođite korake redom. Dopuštenje tražimo samo kada pritisnete gumb.</p><div className="notification-status-list"><p><b>{platform.installed?'✓':'○'}</b><span>Aplikacija instalirana</span></p><p><b>{Notification.permission==='granted'?'✓':'○'}</b><span>Dopuštenje odobreno</span></p><p><b>{serviceWorkerActive?'✓':'○'}</b><span>Service worker aktivan</span></p><p><b>{pushState==='enabled'?'✓':'○'}</b><span>Push pretplata aktivna</span></p><p><b>{lastPushTestAt?'✓':'○'}</b><span>Zadnji uspješan test: {lastPushTestAt?formatDateTime(lastPushTestAt):'nije izvršen'}</span></p></div>{!platform.installed&&<div className="notification-help"><strong>1. Instalirajte aplikaciju</strong>{platform.ios?<p>U Safariju dodirnite Dijeli → Dodaj na početni zaslon, zatim otvorite Salon Kristina s početnog zaslona.</p>:<p>U izborniku preglednika odaberite „Instaliraj aplikaciju” ili „Dodaj na početni zaslon”, zatim je otvorite kao aplikaciju.</p>}</div>}<div className="notification-help"><strong>2. Dopustite obavijesti</strong><p>{platform.android?'Provjerite da su obavijesti dopuštene za Salon Kristina.':'Dopustite obavijesti kada ih aplikacija zatraži.'}</p><button className="primary" type="button" disabled={pushState==='working'||pushState==='enabled'} onClick={()=>void enablePushNotifications()}>{pushState==='working'?'Uključivanje…':pushState==='enabled'?'Pretplata je aktivna':'Uključi obavijesti'}</button></div><div className="notification-help"><strong>3. Pošaljite probnu obavijest</strong><p>Tek uspješan test potvrđuje da je pretplata spremna.</p><button className="secondary" type="button" disabled={pushState!=='enabled'||pushTestBusy} onClick={()=>void sendTestPush()}>{pushTestBusy?'Šaljem test…':'Pošalji probnu obavijest'}</button></div>{platform.samsung&&<div className="notification-help warning"><strong>Ako test ne stigne u pozadini na Samsungu</strong><p>Otvorite: Postavke → Aplikacije → Chrome → Baterija → Neograničeno. Po potrebi isto provjerite za Salon Kristina.</p><p>„Prisilno zaustavi” onemogućuje obavijesti dok ponovno ne otvorite aplikaciju.</p></div>}{platform.ios&&<div className="notification-help"><strong>iPhone/iPad</strong><p>Push radi samo iz aplikacije dodane na početni zaslon. U postavkama uređaja dopustite obavijesti za Salon Kristina.</p></div>}<p className="privacy-note">Aplikacija ne može sama mijenjati postavke baterije ili obavijesti vašeg uređaja.</p></section>}
       {section==='photos'&&<section className="client-card-section"><h2>Moje fotografije</h2>{photos.length?<div className="client-photo-grid">{photos.map(item=><article key={item.id}><img src={item.url} alt={item.phase==='before'?'Frizura prije tretmana':'Frizura poslije tretmana'}/><div><small>{item.phase==='before'?'Prije tretmana':'Poslije tretmana'}</small><strong>{formatDate(item.taken_at)}</strong><p>{item.notes}</p></div></article>)}</div>:<p className="empty-state">Kristina još nije podijelila fotografije s vama.</p>}<p className="privacy-note">Fotografije su privatne i koriste kratkotrajne autorizirane adrese.</p></section>}
