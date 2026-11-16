@@ -1,10 +1,14 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PriceTable, PricingPage } from './PricingPage'
 import { formatPrice, officialPrices } from './lib/officialPrices'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('službeni cjenik', () => {
   it('prikazuje svih 64 usluga s obje cijene bez grupa', () => {
@@ -30,5 +34,25 @@ describe('službeni cjenik', () => {
     expect(screen.getByRole('button', { name: 'Preuzmi CSV' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Natrag' }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('preuzima stvarno objavljenu verziju s propisanim nazivom', async () => {
+    const filename = '90703561_FRIZERSKI_SALON_SKOLSKA_18_PUSCINE_KRISTINA_USLUGE_1_20261116_1815.csv'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ current: filename }) }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.getAttribute('href')).toBe(`/cjenik/${filename}`)
+      expect(this.download).toBe(filename)
+    })
+    render(<PricingPage onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Preuzmi CSV' }))
+    await waitFor(() => expect(click).toHaveBeenCalledOnce())
+  })
+
+  it('prijavljuje neuspješno preuzimanje', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<PricingPage onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Preuzmi CSV' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cjenik nije moguće preuzeti')
   })
 })

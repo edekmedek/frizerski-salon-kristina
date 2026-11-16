@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { officialPrices, formatPrice } from './lib/officialPrices'
 import './Portal.css'
 
@@ -22,20 +23,29 @@ export function PriceTable() {
   </div>
 }
 
-function downloadCSV() {
-  const rows = [
-    'Šifra,Naziv usluge,Bazna cijena 10. 9. 2026. (EUR),Cijena od 15. 11. 2026. (EUR)',
-    ...officialPrices.map(item => `${item.id},"${item.name.replace(/"/g, '""')}",${item.base},${item.current}`),
-  ]
-  const blob = new Blob(['\ufeff', rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = 'cjenik-salon-kristina.csv'
-  link.click()
-  URL.revokeObjectURL(link.href)
-}
-
 export function PricingPage({ onClose }: { onClose: () => void }) {
+  const [downloadError, setDownloadError] = useState('')
+
+  async function downloadCSV() {
+    setDownloadError('')
+    try {
+      const response = await fetch('/cjenik/manifest.json', { cache: 'no-store' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const manifest: unknown = await response.json()
+      if (typeof manifest !== 'object' || manifest === null || !('current' in manifest) ||
+          typeof manifest.current !== 'string' || !/^[A-Z0-9_]+\.csv$/.test(manifest.current)) {
+        throw new Error('Neispravan zapis objavljenog cjenika.')
+      }
+      const link = document.createElement('a')
+      link.href = `/cjenik/${manifest.current}`
+      link.download = manifest.current
+      link.click()
+    } catch (error) {
+      console.error('Preuzimanje cjenika nije uspjelo.', error)
+      setDownloadError('Cjenik nije moguće preuzeti. Pokušajte ponovno.')
+    }
+  }
+
   return <main className="access-page"><section className="access-card" style={{ width: 'min(96vw, 760px)' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
       <div><h1>Cjenik frizerskih usluga</h1><p style={{ color: 'var(--muted)', fontSize: '13px' }}>Frizerski salon Kristina · Školska 18, Pušćine</p></div>
@@ -43,7 +53,9 @@ export function PricingPage({ onClose }: { onClose: () => void }) {
     </div>
     <PriceTable />
     <p className="privacy-note">U cijene su uključeni svi porezi.</p>
-    <button className="link" type="button" onClick={downloadCSV}>Preuzmi CSV</button>
+    <button className="link" type="button" onClick={() => void downloadCSV()}>Preuzmi CSV</button>
+    {downloadError && <p className="form-message" role="alert">{downloadError}</p>}
+    <a className="link" href="/cjenik/">Arhiva cjenika</a>
     <button className="link" type="button" onClick={onClose}>Natrag</button>
   </section></main>
 }

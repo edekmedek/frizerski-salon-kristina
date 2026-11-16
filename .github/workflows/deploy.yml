@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -43,6 +43,27 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+
+      - name: Prepare and retain price archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/cjenik-arhiva"
+          if git ls-remote --exit-code origin refs/heads/cjenik-arhiva > /dev/null; then
+            git fetch origin refs/heads/cjenik-arhiva
+            git worktree add --detach "$archive" FETCH_HEAD
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then exit "$status"; fi
+            git worktree add --detach "$archive" HEAD
+            git -C "$archive" switch --orphan cjenik-arhiva
+          fi
+          node --experimental-strip-types scripts/price-archive.mjs "$archive/price-lists" dist
+          git -C "$archive" add --all
+          if ! git -C "$archive" diff --cached --quiet; then
+            git -C "$archive" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Archive published price list"
+            git -C "$archive" push origin HEAD:refs/heads/cjenik-arhiva
+          fi
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

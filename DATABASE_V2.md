@@ -120,8 +120,19 @@ uslugama za termine, a read-only view služi izboru termina.
 Javni i klijentski prikaz službenog cjenika te CSV preuzimanje koriste isti
 izvor `src/lib/officialPrices.ts`, usklađen s `cjenik kristina.xlsx`: bazne
 cijene na 10. 9. 2026. i aktualne cijene od 15. 11. 2026. Promjene usluga u
-administraciji ne mijenjaju automatski taj prikaz. Stari statički
-`public/cjenik.csv` zamijenjen je CSV preuzimanjem iz zajedničkog izvora.
+administraciji ne mijenjaju automatski taj prikaz; cijene koje se objavljuju
+mijenjaju se u `src/lib/officialPrices.ts`.
+
+GitHub Pages workflow iz tog izvora izrađuje CSV sa stupcima za usluge u
+redoslijedu iz članka 3. Pravilnika NN 132/2026, UTF-8 kodiranjem i
+razdjelnikom `;`. Trenutačno nema posebnih oblika prodaje: ako se to promijeni,
+potrebno je prije objave prilagoditi podatke i izvoz. Aktualni CSV dostupan je
+na `/cjenik.csv`, a imenovane verzije i popis na `/cjenik/`. Pri promjeni
+sadržaja workflow pohranjuje novu verziju u grani `cjenik-arhiva`; starije
+verzije ne briše te ih ponovno objavljuje. Broj pohrane je redni broj verzije,
+a vremenska oznaka je zagrebačko vrijeme pripreme objave. Ne brisati arhivsku
+granu niti ručno mijenjati njezine datoteke. Uspješna objava workflowa mora
+se provjeriti nakon svake izmjene, najkasnije do 11 sati na dan izmjene.
 
 ### Ciljni model
 
