@@ -1,103 +1,16 @@
-import { useState } from 'react'
-import type { pricingData as PricingDataType } from './lib/pricingData'
-import { toCsvString } from './lib/pricingData'
 import './Portal.css'
 
 interface PricingPageProps {
   onClose: () => void
-  pricingData: typeof PricingDataType
 }
 
-export function PricingPage({ onClose, pricingData }: PricingPageProps) {
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(
-    pricingData.categories[0]?.id ?? null
-  )
+const officialPrices = [{"name":"Aplikacija boje","base":5,"current":5},{"name":"Bojenje obrva","base":3,"current":3},{"name":"Bojenje trepavica","base":4,"current":4},{"name":"Botox 1","base":60,"current":60},{"name":"Botox 2","base":70,"current":70},{"name":"Botox 3","base":80,"current":80},{"name":"Botox 4","base":90,"current":90},{"name":"Botox 5","base":100,"current":100},{"name":"Keratin 1","base":70,"current":70},{"name":"Keratin 2","base":90,"current":90},{"name":"Keratin 3","base":110,"current":110},{"name":"Keratin 4","base":130,"current":130},{"name":"Keratin 5","base":150,"current":150},{"name":"Keratin 6","base":170,"current":170},{"name":"Keratin 7","base":190,"current":190},{"name":"Minival srednja kosa","base":55,"current":55},{"name":"Minival kratka kosa","base":45,"current":45},{"name":"Minival duga kosa","base":85,"current":85},{"name":"Pranje kose","base":5,"current":5},{"name":"Svečana frizura duga kosa","base":50,"current":50},{"name":"Svečana frizura srednja kosa","base":30,"current":30},{"name":"Svečana frizura kratka kosa","base":25,"current":25},{"name":"Šišanje i oblikovanje","base":15,"current":15},{"name":"Šišanje i pranje kose","base":14,"current":14},{"name":"Šišanje kose","base":10,"current":10},{"name":"Šišanje kose mašinica","base":7,"current":7},{"name":"Šišanje šiški","base":4,"current":4},{"name":"Šišanje pranje i oblikovanje","base":18,"current":18},{"name":"Vjenčana frizura duga kosa","base":70,"current":70},{"name":"Vjenčana frizura srednjaa kosa","base":60,"current":60},{"name":"Vjenčana frizura kratka kosa","base":50,"current":50},{"name":"Češljanje","base":4,"current":4},{"name":"Defy Damage tretman 1","base":4,"current":4},{"name":"Defy Damage tretman 2","base":5,"current":5},{"name":"K-pack reconstructor 1","base":18,"current":18},{"name":"K-pack reconstructor 2","base":20,"current":20},{"name":"K-pack reconstructor 3","base":23,"current":23},{"name":"Lumishine boja 10 g","base":6.5,"current":6.5},{"name":"Liquid toner 10 g","base":6.5,"current":6.5},{"name":"Demi dimensional 10g","base":6.5,"current":6.5},{"name":"Blond life blanš 10 g","base":5.5,"current":5.5},{"name":"Vero light blanš 10g","base":5.5,"current":5.5},{"name":"Intensity 10g","base":5,"current":5},{"name":"Vero - K 10g","base":6.5,"current":6.5},{"name":"10 min. Boja 10g","base":6.5,"current":6.5},{"name":"Frizura S","base":15,"current":16},{"name":"Frizura M","base":17,"current":18},{"name":"Frizura L","base":19,"current":20},{"name":"Frizura XL","base":21,"current":23},{"name":"Frizura XXL","base":25,"current":28},{"name":"Šišanje i frizura S","base":21,"current":23},{"name":"Šišanje i frizura M","base":23,"current":25},{"name":"Šišanje i frizura L","base":25,"current":27},{"name":"Šišanje i frizura XL","base":27,"current":30},{"name":"Šišanje i frizura XXL","base":30,"current":35},{"name":"Šišanje i frizura uz bojenje S","base":18,"current":18},{"name":"Šišanje i frizura uz bojenje M","base":20,"current":20},{"name":"Šišanje i frizura uz bojenje L","base":22,"current":22},{"name":"Defy Damage tretman 3","base":4.5,"current":4.5},{"name":"Frizura XS","base":13,"current":14},{"name":"Šišanje i frizura XS","base":20,"current":20},{"name":"Olaplex 10ml","base":2,"current":2},{"name":"Predpigmentacija M","base":5,"current":5},{"name":"Predpigmentacija L","base":10,"current":10}]
+const formatPrice = (value: number) => value.toLocaleString('hr-HR', {style:'currency',currency:'EUR'})
 
-  function downloadCSV() {
-    const csv = toCsvString()
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = 'cjenik-salon-kristina.csv'
-    link.click()
-    URL.revokeObjectURL(link.href)
-  }
-
-  return (
-    <main className="access-page">
-      <section className="access-card">
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '24px',
-          }}
-        >
-          <div>
-            <h1>Cjenik usluga</h1>
-            <p style={{ margin: '8px 0 0 0', color: 'var(--muted)', fontSize: '13px' }}>
-              Sve cijene u eurima bez PDV-a
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 0,
-              fontSize: '24px',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="client-price-accordion">
-          {pricingData.categories.map((category: typeof pricingData.categories[number]) => (
-            <div key={category.id} className="client-price-category">
-              <button
-                onClick={() =>
-                  setExpandedCategory(expandedCategory === category.id ? null : category.id)
-                }
-              >
-                <strong>{category.name}</strong>
-                <span style={{ marginLeft: 'auto' }}>
-                  {expandedCategory === category.id ? '−' : '+'}
-                </span>
-              </button>
-
-              {expandedCategory === category.id && (
-                <div className="client-price-list">
-                  <p style={{ margin: '8px 0 12px 0', color: 'var(--muted)', fontSize: '13px' }}>
-                    {category.description}
-                  </p>
-                  {category.services.map((service: typeof category.services[number]) => (
-                    <div key={service.id}>
-                      <span>
-                        <strong>{service.name}</strong>
-                      </span>
-                      <strong>{service.price} €</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div style={{ marginTop: '24px', textAlign: 'center', display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <button className="link" onClick={downloadCSV}>
-            Preuzmi CSV
-          </button>
-          <span style={{ color: 'var(--line)' }}>•</span>
-          <button className="link" onClick={onClose}>
-            Natrag
-          </button>
-        </div>
-      </section>
-    </main>
-  )
+export function PricingPage({onClose}: PricingPageProps) {
+  return <main className="access-page"><section className="access-card" style={{width:'min(96vw,1100px)',maxWidth:'1100px'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',marginBottom:'20px'}}><div><h1>Cjenik frizerskih usluga</h1><p style={{color:'var(--muted)',fontSize:'13px'}}>Frizerski salon Kristina · Školska 18, Pušćine</p></div><button type="button" onClick={onClose} aria-label="Zatvori cjenik" style={{background:'transparent',border:0,fontSize:'24px',cursor:'pointer'}}>✕</button></div>
+    <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',minWidth:'690px',fontSize:'13px'}}><thead><tr>{[0,1].map(side=><th key={side} colSpan={3} style={{textAlign:'left',padding:'8px 6px',borderBottom:'1px solid var(--line)'}}>Usluga <span style={{float:'right'}}>Bazna 10. 9. 2026. / Aktualna 15. 11. 2026.</span></th>)}</tr></thead><tbody>{officialPrices.slice(0,32).map((left,index)=>{const right=officialPrices[index+32];return <tr key={left.name} style={{borderBottom:'1px solid var(--line)'}}>{[left,right].map(item=><td key={item.name} colSpan={3} style={{padding:'8px 6px'}}><div style={{display:'grid',gridTemplateColumns:'minmax(110px,1fr) auto auto',gap:'10px',alignItems:'center'}}><span>{item.name}</span><span style={{whiteSpace:'nowrap'}}>{formatPrice(item.base)}</span><strong style={{whiteSpace:'nowrap'}}>{formatPrice(item.current)}</strong></div></td>)}</tr>})}</tbody></table></div>
+    <p style={{fontSize:'12px',color:'var(--muted)'}}>Cijene u eurima. Bazna cijena vrijedi na dan 10. 9. 2026.</p><button className="link" onClick={onClose}>Natrag</button>
+  </section></main>
 }
