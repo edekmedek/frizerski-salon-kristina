@@ -130,17 +130,23 @@ potrebno je prije objave prilagoditi podatke i izvoz. Aktualni CSV dostupan je
 na `/cjenik.csv`, a imenovane verzije i popis na `/cjenik/`. Pri promjeni
 sadržaja workflow pohranjuje novu verziju u grani `cjenik-arhiva`; starije
 verzije ne briše te ih ponovno objavljuje. Broj pohrane je redni broj verzije,
-a vremenska oznaka je zagrebačko vrijeme pripreme objave. Ne brisati arhivsku
-granu niti ručno mijenjati njezine datoteke. Uspješna objava workflowa mora
-se provjeriti nakon svake izmjene, najkasnije do 11 sati na dan izmjene.
+a naziv se izrađuje neposredno prije objave prema zagrebačkom vremenu.
+Ne brisati arhivsku granu niti ručno mijenjati njezine datoteke. Uspješna
+objava workflowa mora se provjeriti nakon svake izmjene, najkasnije do 11 sati
+na dan izmjene.
 
 Nakon objave workflow provjerava stalni URL, imenovanu datoteku i manifest,
 uspoređuje ih s izvorom te u manifestu bilježi `firstVerifiedAt`: vrijeme
 prve automatizirane potvrde javne dostupnosti, ne nužno trenutak prve objave.
 Potvrda se sprema u arhivsku granu i objavljuje na `/cjenik/manifest.json`.
-Oznaka u nazivu i dalje nastaje pri pripremi, prije završetka GitHub Pages
-objave, pa se ne smije tumačiti kao potvrđeno vrijeme javne objave. Stalni
-URL vraća CSV bez preusmjeravanja; imenovana verzija javno je dostupna zasebno.
+Za novu verziju `publicationMinuteVerified` je `true` samo ako su priprema
+i uspješan dohvat oba CSV-a i manifesta unutar iste minute, uz vremenski razmak
+manji od minute i ispravan redoslijed sata. Tako se minuta u nazivu potvrđuje
+bez izjednačavanja pripreme i stvarnog početka objave. Ako potvrda nije moguća,
+vrijednost je `false` i workflow završava pogreškom nakon objave podataka za
+provjeru; potrebno je pregledati i ispraviti objavu. Za ranije verzije bez
+te oznake minuta objave nije dokazana. Stalni URL vraća CSV bez
+preusmjeravanja; imenovana verzija javno je dostupna zasebno.
 
 ### Ciljni model
 

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { officialPrices } from '../src/lib/officialPrices'
 import { pricingCsv } from '../src/lib/pricingCsv'
 import { preparePriceArchive } from './price-archive.mjs'
-import { verifyPricePublication } from './verify-price-publication.mjs'
+import { assertPublicationMinute, verifyPricePublication } from './verify-price-publication.mjs'
 
 const temporaryDirs = []
 afterEach(async () => {
@@ -64,16 +64,71 @@ describe('javni CSV i trajna arhiva', () => {
     let publicManifest = prepared
     const fetcher = async url => new Response(url.pathname.endsWith('manifest.json') ? JSON.stringify(publicManifest) : csv)
     const verified = await verifyPricePublication(archive, dist, officialPrices, {
-      fetcher, now: () => new Date('2026-11-16T17:18:01Z'), attempts: 1,
+      fetcher, now: () => new Date('2026-11-16T17:17:59Z'), attempts: 1,
     })
     expect(verified.versions[0].preparedAt).toBe('2026-11-16T17:17:39.000Z')
-    expect(verified.versions[0].firstVerifiedAt).toBe('2026-11-16T17:18:01.000Z')
+    expect(verified.versions[0].firstVerifiedAt).toBe('2026-11-16T17:17:59.000Z')
+    expect(verified.versions[0].publicationMinuteVerified).toBe(true)
+    expect(() => assertPublicationMinute(verified.versions[0])).not.toThrow()
     expect(JSON.parse(await readFile(join(dist, 'cjenik', 'manifest.json'), 'utf8'))).toEqual(verified)
     publicManifest = verified
     const repeated = await verifyPricePublication(archive, dist, officialPrices, {
       fetcher, now: () => new Date('2026-11-17T17:18:01Z'), attempts: 1,
     })
-    expect(repeated.versions[0].firstVerifiedAt).toBe('2026-11-16T17:18:01.000Z')
+    expect(repeated.versions[0].firstVerifiedAt).toBe('2026-11-16T17:17:59.000Z')
+    expect(repeated.versions[0].publicationMinuteVerified).toBe(true)
+  })
+
+  it('ne potvrđuje minutu ako je dohvat nakon nje i ne mijenja ranije verzije', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'salon-prices-test-'))
+    temporaryDirs.push(root)
+    const archive = join(root, 'archive')
+    const dist = join(root, 'dist')
+    const first = await preparePriceArchive(archive, dist, officialPrices, new Date('2026-11-16T17:00:00Z'))
+    const firstContents = await readFile(join(archive, first.current), 'utf8')
+    const changed = officialPrices.map((price, index) => index === 0 ? { ...price, current: 6 } : price)
+    const prepared = await preparePriceArchive(archive, dist, changed, new Date('2026-11-16T17:17:59Z'))
+    const fetcher = async url => new Response(url.pathname.endsWith('manifest.json') ? JSON.stringify(prepared) : pricingCsv(changed))
+    const verified = await verifyPricePublication(archive, dist, changed, {
+      fetcher, now: () => new Date('2026-11-16T17:18:01Z'), attempts: 1,
+    })
+    expect(verified.versions[1].firstVerifiedAt).toBe('2026-11-16T17:18:01.000Z')
+    expect(verified.versions[1].publicationMinuteVerified).toBe(false)
+    expect(() => assertPublicationMinute(verified.versions[1])).toThrow('Minuta objave')
+    expect(await readFile(join(archive, first.current), 'utf8')).toBe(firstContents)
+    expect(await readFile(join(dist, 'cjenik', first.current), 'utf8')).toBe(firstContents)
+  })
+
+  it('ne dokazuje minutu ako sat ide unatrag ili se ista lokalna minuta ponovi', async () => {
+    for (const observed of ['2026-10-25T00:29:59Z', '2026-10-25T01:30:20Z']) {
+      const root = await mkdtemp(join(tmpdir(), 'salon-prices-test-'))
+      temporaryDirs.push(root)
+      const archive = join(root, 'archive')
+      const dist = join(root, 'dist')
+      const prepared = await preparePriceArchive(archive, dist, officialPrices, new Date('2026-10-25T00:30:00Z'))
+      const fetcher = async url => new Response(url.pathname.endsWith('manifest.json') ? JSON.stringify(prepared) : pricingCsv(officialPrices))
+      const verified = await verifyPricePublication(archive, dist, officialPrices, {
+        fetcher, now: () => new Date(observed), attempts: 1,
+      })
+      expect(verified.versions[0].publicationMinuteVerified).toBe(false)
+    }
+    expect(() => assertPublicationMinute({ publicationMinuteVerified: null })).toThrow('Minuta objave')
+    expect(() => assertPublicationMinute({})).not.toThrow()
+  })
+
+  it('ne potvrđuje minutu ako se naziv ne podudara s vremenom pripreme', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'salon-prices-test-'))
+    temporaryDirs.push(root)
+    const archive = join(root, 'archive')
+    const dist = join(root, 'dist')
+    const prepared = await preparePriceArchive(archive, dist, officialPrices, new Date('2026-11-16T17:17:00Z'))
+    prepared.versions[0].preparedAt = '2026-11-16T17:18:00.000Z'
+    await writeFile(join(archive, 'manifest.json'), JSON.stringify(prepared))
+    const fetcher = async url => new Response(url.pathname.endsWith('manifest.json') ? JSON.stringify(prepared) : pricingCsv(officialPrices))
+    const verified = await verifyPricePublication(archive, dist, officialPrices, {
+      fetcher, now: () => new Date('2026-11-16T17:18:10Z'), attempts: 1,
+    })
+    expect(verified.versions[0].publicationMinuteVerified).toBe(false)
   })
 
   it('ne bilježi potvrdu kad se javni CSV razlikuje od izvora', async () => {

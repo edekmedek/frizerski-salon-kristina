@@ -4,6 +4,13 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { officialPrices } from '../src/lib/officialPrices.ts'
 import { pricingCsv } from '../src/lib/pricingCsv.ts'
+import { timestamp } from './price-archive.mjs'
+
+export function assertPublicationMinute(version) {
+  if (version.publicationMinuteVerified === false || version.publicationMinuteVerified === null) {
+    throw new Error('Minuta objave u nazivu cjenika nije potvrđena; potrebna je provjera i ispravak objave.')
+  }
+}
 
 export async function verifyPricePublication(archiveDir, distDir, prices, options = {}) {
   const { baseUrl = 'https://frizerskisalonkristina.hr', fetcher = fetch, now = () => new Date(), attempts = 12, delayMs = 5000 } = options
@@ -21,10 +28,9 @@ export async function verifyPricePublication(archiveDir, distDir, prices, option
     throw new Error('Arhivski cjenik ne odgovara službenom izvoru.')
   }
 
-  const token = randomUUID()
   async function get(path) {
     const url = new URL(path, baseUrl)
-    url.searchParams.set('provjera', token)
+    url.searchParams.set('provjera', randomUUID())
     const response = await fetcher(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) })
     if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`)
     return response.text()
@@ -57,11 +63,18 @@ export async function verifyPricePublication(archiveDir, distDir, prices, option
   if (!verified) throw new Error('Javnu objavu cjenika nije moguće potvrditi.', { cause: lastError })
 
   if (!version.firstVerifiedAt) {
-    version.firstVerifiedAt = now().toISOString()
+    const observed = now()
+    version.firstVerifiedAt = observed.toISOString()
+    if (version.publicationMinuteVerified === null) {
+      const prepared = new Date(version.preparedAt)
+      const elapsed = observed.getTime() - prepared.getTime()
+      version.publicationMinuteVerified = Number.isFinite(elapsed) && elapsed >= 0 && elapsed < 60000 &&
+        timestamp(prepared) === timestamp(observed) && version.filename.endsWith(`_${timestamp(prepared)}.csv`)
+    }
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
   }
   await copyFile(manifestPath, join(distDir, 'cjenik', 'manifest.json'))
-  console.info(`Javni cjenik potvrđen; prva potvrda ${version.firstVerifiedAt}; oznaka naziva označuje pripremu ${version.preparedAt}.`)
+  console.info(`Javni cjenik potvrđen; prva potvrda ${version.firstVerifiedAt}; priprema ${version.preparedAt}; minuta objave potvrđena: ${version.publicationMinuteVerified ?? 'nije utvrđeno'}.`)
   return manifest
 }
 

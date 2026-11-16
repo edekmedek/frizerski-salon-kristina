@@ -8,7 +8,7 @@ import { pricingCsv } from '../src/lib/pricingCsv.ts'
 const filenamePattern = /^90703561_FRIZERSKI_SALON_SKOLSKA_18_PUSCINE_KRISTINA_USLUGE_\d+_\d{8}_\d{4}\.csv$/
 const hash = text => createHash('sha256').update(text, 'utf8').digest('hex')
 
-function timestamp(date) {
+export function timestamp(date) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Europe/Zagreb', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -59,7 +59,7 @@ export async function preparePriceArchive(archiveDir, distDir, prices, now = new
     const sequence = manifest.versions.length + 1
     const filename = `90703561_FRIZERSKI_SALON_SKOLSKA_18_PUSCINE_KRISTINA_USLUGE_${sequence}_${timestamp(now)}.csv`
     await writeFile(join(archiveDir, filename), csv, { encoding: 'utf8', flag: 'wx' })
-    manifest.versions.push({ filename, sequence, sha256: digest, preparedAt: now.toISOString() })
+    manifest.versions.push({ filename, sequence, sha256: digest, preparedAt: now.toISOString(), publicationMinuteVerified: null })
     manifest.current = filename
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
   }

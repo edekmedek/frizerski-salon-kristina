@@ -44,31 +44,10 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
 
-      - name: Prepare and retain price archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/cjenik-arhiva"
-          if git ls-remote --exit-code origin refs/heads/cjenik-arhiva > /dev/null; then
-            git fetch origin refs/heads/cjenik-arhiva
-            git worktree add --detach "$archive" FETCH_HEAD
-          else
-            status=$?
-            if [ "$status" -ne 2 ]; then exit "$status"; fi
-            git worktree add --detach "$archive" HEAD
-            git -C "$archive" switch --orphan cjenik-arhiva
-          fi
-          node --experimental-strip-types scripts/price-archive.mjs "$archive/price-lists" dist
-          git -C "$archive" add --all
-          if ! git -C "$archive" diff --cached --quiet; then
-            git -C "$archive" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Archive published price list"
-            git -C "$archive" push origin HEAD:refs/heads/cjenik-arhiva
-          fi
-
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload built site
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -80,10 +59,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -92,11 +67,47 @@ jobs:
         with:
           node-version: 22
 
-      - name: Download deployed artifact
+      - name: Download built site
         uses: actions/download-artifact@v4
         with:
           name: github-pages
           path: ${{ runner.temp }}/pages-artifact
+
+      - name: Prepare and retain price archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/cjenik-arhiva"
+          site="$RUNNER_TEMP/pages-site"
+          mkdir -p "$site"
+          tar -xf "$RUNNER_TEMP/pages-artifact/artifact.tar" -C "$site"
+          if git ls-remote --exit-code origin refs/heads/cjenik-arhiva > /dev/null; then
+            git fetch origin refs/heads/cjenik-arhiva
+            git worktree add --detach "$archive" FETCH_HEAD
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then exit "$status"; fi
+            git worktree add --detach "$archive" HEAD
+            git -C "$archive" switch --orphan cjenik-arhiva
+          fi
+          node --experimental-strip-types scripts/price-archive.mjs "$archive/price-lists" "$site"
+          git -C "$archive" add --all
+          if ! git -C "$archive" diff --cached --quiet; then
+            git -C "$archive" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Archive published price list"
+            git -C "$archive" push origin HEAD:refs/heads/cjenik-arhiva
+          fi
+
+      - name: Upload prepared Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: github-pages-prepared-prices
+          path: ${{ runner.temp }}/pages-site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-prepared-prices
 
       - name: Verify published CSV and record observation
         id: verify-prices
@@ -104,11 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           site="$RUNNER_TEMP/pages-site"
-          archive="$RUNNER_TEMP/cjenik-verify"
-          mkdir -p "$site"
-          tar -xf "$RUNNER_TEMP/pages-artifact/artifact.tar" -C "$site"
-          git fetch origin refs/heads/cjenik-arhiva
-          git worktree add --detach "$archive" FETCH_HEAD
+          archive="$RUNNER_TEMP/cjenik-arhiva"
           node --experimental-strip-types scripts/verify-price-publication.mjs "$archive/price-lists" "$site"
           git -C "$archive" add -- price-lists/manifest.json
           if ! git -C "$archive" diff --cached --quiet; then
@@ -145,7 +152,8 @@ jobs:
               if (!response.ok) throw new Error(`HTTP ${response.status}`)
               const actual = await response.json()
               if (actual.current !== expected.current ||
-                  actual.versions.at(-1)?.firstVerifiedAt !== expected.versions.at(-1)?.firstVerifiedAt) {
+                  actual.versions.at(-1)?.firstVerifiedAt !== expected.versions.at(-1)?.firstVerifiedAt ||
+                  actual.versions.at(-1)?.publicationMinuteVerified !== expected.versions.at(-1)?.publicationMinuteVerified) {
                 throw new Error('Javni manifest još ne sadrži potvrdu.')
               }
               console.log('Javni manifest sadrži provjereno vrijeme.')
@@ -157,4 +165,23 @@ jobs:
             }
           }
           throw new Error('Javni manifest nije potvrđen nakon ponavljanja.', { cause: lastError })
+          NODE
+
+      - name: Require confirmed publication minute for new versions
+        shell: bash
+        run: |
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          import { assertPublicationMinute } from './scripts/verify-price-publication.mjs'
+          const manifest = JSON.parse(await readFile(`${process.env.RUNNER_TEMP}/cjenik-arhiva/price-lists/manifest.json`, 'utf8'))
+          for (const version of manifest.versions) {
+            try {
+              assertPublicationMinute(version)
+            } catch (error) {
+              throw new Error(`Nepotvrđena minuta objave: ${version.filename}`, { cause: error })
+            }
+            if (version.publicationMinuteVerified === undefined) {
+              console.warn(`Starija verzija nema dokaz minute prve objave: ${version.filename}`)
+            }
+          }
           NODE
