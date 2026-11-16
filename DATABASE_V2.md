@@ -134,6 +134,12 @@ a vremenska oznaka je zagrebačko vrijeme pripreme objave. Ne brisati arhivsku
 granu niti ručno mijenjati njezine datoteke. Uspješna objava workflowa mora
 se provjeriti nakon svake izmjene, najkasnije do 11 sati na dan izmjene.
 
+Ograničenje: stalni URL `/cjenik.csv` vraća generički naziv bez HTTP zaglavlja
+`Content-Disposition`, dok se potpuni naziv nalazi na zasebnom URL-u verzije.
+Oznaka u nazivu nastaje prije završetka objave i nije zajamčeno jednaka minuti
+stvarne objave. Za pouzdano objedinjavanje stalnog URL-a, propisanog naziva i
+vremena objave potrebno je poslužiteljsko rješenje i dodatna pravna provjera.
+
 ### Ciljni model
 
 Za sada zadržati postojeće tablice:

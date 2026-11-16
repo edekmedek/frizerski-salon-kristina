@@ -3,20 +3,21 @@ import { officialPrices, formatPrice } from './lib/officialPrices'
 import './Portal.css'
 
 export function PriceTable() {
-  return <div style={{ overflowX: 'auto' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+  return <div className="price-table-container">
+    <table className="price-table">
+      <colgroup><col /><col /><col /></colgroup>
       <thead>
         <tr>
-          <th scope="col" style={{ textAlign: 'left', padding: '10px 5px' }}>Usluga</th>
-          <th scope="col" style={{ textAlign: 'right', padding: '10px 5px' }}>Bazna cijena<br />10. 9. 2026.</th>
-          <th scope="col" style={{ textAlign: 'right', padding: '10px 5px' }}>Cijena od<br />15. 11. 2026.</th>
+          <th scope="col">Usluga</th>
+          <th scope="col">Bazna cijena<br />10. 9. 2026.</th>
+          <th scope="col">Cijena od<br />15. 11. 2026.</th>
         </tr>
       </thead>
       <tbody>
-        {officialPrices.map(item => <tr key={item.id} style={{ borderTop: '1px solid var(--line)' }}>
-          <th scope="row" style={{ textAlign: 'left', padding: '8px 5px' }}>{item.name}</th>
-          <td style={{ textAlign: 'right', padding: '8px 5px', whiteSpace: 'nowrap' }}>{formatPrice(item.base)}</td>
-          <td style={{ textAlign: 'right', padding: '8px 5px', whiteSpace: 'nowrap', fontWeight: 700 }}>{formatPrice(item.current)}</td>
+        {officialPrices.map(item => <tr key={item.id}>
+          <th scope="row">{item.name}</th>
+          <td>{formatPrice(item.base)}</td>
+          <td>{formatPrice(item.current)}</td>
         </tr>)}
       </tbody>
     </table>
@@ -46,7 +47,7 @@ export function PricingPage({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return <main className="access-page"><section className="access-card" style={{ width: 'min(96vw, 760px)' }}>
+  return <section className="pricing-page">
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
       <div><h1>Cjenik frizerskih usluga</h1><p style={{ color: 'var(--muted)', fontSize: '13px' }}>Frizerski salon Kristina · Školska 18, Pušćine</p></div>
       <button type="button" onClick={onClose} aria-label="Zatvori cjenik" style={{ background: 'transparent', border: 0, fontSize: '24px', cursor: 'pointer' }}>✕</button>
@@ -57,5 +58,5 @@ export function PricingPage({ onClose }: { onClose: () => void }) {
     {downloadError && <p className="form-message" role="alert">{downloadError}</p>}
     <a className="link" href="/cjenik/">Arhiva cjenika</a>
     <button className="link" type="button" onClick={onClose}>Natrag</button>
-  </section></main>
+  </section>
 }

@@ -300,6 +300,42 @@
 }
 
 /* Hero buttons container */
+.access-card.pricing-access-card {
+  width: min(760px, 100%);
+  min-width: 0;
+}
+
+.pricing-page,
+.price-table-container {
+  min-width: 0;
+  width: 100%;
+}
+
+.price-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.price-table col:first-child { width: 46%; }
+.price-table col:not(:first-child) { width: 27%; }
+.price-table th,
+.price-table td { padding: 8px 4px; }
+.price-table thead th { text-align: right; overflow-wrap: anywhere; }
+.price-table thead th:first-child { text-align: left; }
+.price-table tbody th {
+  color: var(--ink);
+  font-size: 13px;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  text-transform: none;
+}
+.price-table td { text-align: right; white-space: nowrap; font-size: 13px; }
+.price-table td:last-child { font-weight: 700; }
+.price-table tbody tr { border-top: 1px solid var(--line); }
+
 .hero-buttons-container {
   display: flex;
   gap: 12px;

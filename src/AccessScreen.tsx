@@ -303,7 +303,7 @@ export function AccessScreen() {
     }
   }
 
-  return <main className={`access-page${mode === 'home-redesigned' ? ' salon-redesigned-page' : ''}`}><section className={`access-card${mode === 'home-redesigned' ? ' salon-home' : ''}`}>
+  return <main className={`access-page${mode === 'home-redesigned' ? ' salon-redesigned-page' : ''}`}><section className={`access-card${mode === 'home-redesigned' ? ' salon-home' : mode === 'pricing' ? ' pricing-access-card' : ''}`}>
     <div className="portal-brand"><span>K</span><div><strong>Salon Kristina</strong>{mode !== 'home-redesigned' && <small>Topla elegancija</small>}</div></div>
     {mode === 'home-redesigned' && <div className="salon-redesigned-content">
       <section className="redesigned-hero">
