@@ -134,11 +134,13 @@ a vremenska oznaka je zagrebačko vrijeme pripreme objave. Ne brisati arhivsku
 granu niti ručno mijenjati njezine datoteke. Uspješna objava workflowa mora
 se provjeriti nakon svake izmjene, najkasnije do 11 sati na dan izmjene.
 
-Ograničenje: stalni URL `/cjenik.csv` vraća generički naziv bez HTTP zaglavlja
-`Content-Disposition`, dok se potpuni naziv nalazi na zasebnom URL-u verzije.
-Oznaka u nazivu nastaje prije završetka objave i nije zajamčeno jednaka minuti
-stvarne objave. Za pouzdano objedinjavanje stalnog URL-a, propisanog naziva i
-vremena objave potrebno je poslužiteljsko rješenje i dodatna pravna provjera.
+Nakon objave workflow provjerava stalni URL, imenovanu datoteku i manifest,
+uspoređuje ih s izvorom te u manifestu bilježi `firstVerifiedAt`: vrijeme
+prve automatizirane potvrde javne dostupnosti, ne nužno trenutak prve objave.
+Potvrda se sprema u arhivsku granu i objavljuje na `/cjenik/manifest.json`.
+Oznaka u nazivu i dalje nastaje pri pripremi, prije završetka GitHub Pages
+objave, pa se ne smije tumačiti kao potvrđeno vrijeme javne objave. Stalni
+URL vraća CSV bez preusmjeravanja; imenovana verzija javno je dostupna zasebno.
 
 ### Ciljni model
 

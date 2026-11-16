@@ -83,3 +83,78 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download deployed artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/pages-artifact
+
+      - name: Verify published CSV and record observation
+        id: verify-prices
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="$RUNNER_TEMP/pages-site"
+          archive="$RUNNER_TEMP/cjenik-verify"
+          mkdir -p "$site"
+          tar -xf "$RUNNER_TEMP/pages-artifact/artifact.tar" -C "$site"
+          git fetch origin refs/heads/cjenik-arhiva
+          git worktree add --detach "$archive" FETCH_HEAD
+          node --experimental-strip-types scripts/verify-price-publication.mjs "$archive/price-lists" "$site"
+          git -C "$archive" add -- price-lists/manifest.json
+          if ! git -C "$archive" diff --cached --quiet; then
+            git -C "$archive" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Record price publication verification"
+            git -C "$archive" push origin HEAD:refs/heads/cjenik-arhiva
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload verified Pages artifact
+        if: steps.verify-prices.outputs.updated == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: github-pages-verified-prices
+          path: ${{ runner.temp }}/pages-site
+
+      - name: Publish verification metadata
+        if: steps.verify-prices.outputs.updated == 'true'
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-verified-prices
+
+      - name: Check published verification metadata
+        if: steps.verify-prices.outputs.updated == 'true'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const path = `${process.env.RUNNER_TEMP}/pages-site/cjenik/manifest.json`
+          const expected = JSON.parse(await readFile(path, 'utf8'))
+          let lastError
+          for (let attempt = 0; attempt < 12; attempt++) {
+            try {
+              const response = await fetch(`https://frizerskisalonkristina.hr/cjenik/manifest.json?provjera=${crypto.randomUUID()}`, { signal: AbortSignal.timeout(10000) })
+              if (!response.ok) throw new Error(`HTTP ${response.status}`)
+              const actual = await response.json()
+              if (actual.current !== expected.current ||
+                  actual.versions.at(-1)?.firstVerifiedAt !== expected.versions.at(-1)?.firstVerifiedAt) {
+                throw new Error('Javni manifest još ne sadrži potvrdu.')
+              }
+              console.log('Javni manifest sadrži provjereno vrijeme.')
+              process.exit(0)
+            } catch (error) {
+              lastError = error
+              console.warn('Javni manifest nije potvrđen:', error)
+              await new Promise(resolve => setTimeout(resolve, 5000))
+            }
+          }
+          throw new Error('Javni manifest nije potvrđen nakon ponavljanja.', { cause: lastError })
+          NODE

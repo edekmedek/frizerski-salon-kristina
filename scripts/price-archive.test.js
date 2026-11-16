@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { officialPrices } from '../src/lib/officialPrices'
 import { pricingCsv } from '../src/lib/pricingCsv'
 import { preparePriceArchive } from './price-archive.mjs'
+import { verifyPricePublication } from './verify-price-publication.mjs'
 
 const temporaryDirs = []
 afterEach(async () => {
@@ -51,5 +52,52 @@ describe('javni CSV i trajna arhiva', () => {
 
     await writeFile(join(archive, first), 'oštećeno')
     await expect(preparePriceArchive(archive, dist, changed)).rejects.toThrow('Oštećen arhivski cjenik')
+  })
+
+  it('bilježi samo vrijeme stvarne potvrde obaju javnih CSV-ova', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'salon-prices-test-'))
+    temporaryDirs.push(root)
+    const archive = join(root, 'archive')
+    const dist = join(root, 'dist')
+    const prepared = await preparePriceArchive(archive, dist, officialPrices, new Date('2026-11-16T17:17:39Z'))
+    const csv = pricingCsv(officialPrices)
+    let publicManifest = prepared
+    const fetcher = async url => new Response(url.pathname.endsWith('manifest.json') ? JSON.stringify(publicManifest) : csv)
+    const verified = await verifyPricePublication(archive, dist, officialPrices, {
+      fetcher, now: () => new Date('2026-11-16T17:18:01Z'), attempts: 1,
+    })
+    expect(verified.versions[0].preparedAt).toBe('2026-11-16T17:17:39.000Z')
+    expect(verified.versions[0].firstVerifiedAt).toBe('2026-11-16T17:18:01.000Z')
+    expect(JSON.parse(await readFile(join(dist, 'cjenik', 'manifest.json'), 'utf8'))).toEqual(verified)
+    publicManifest = verified
+    const repeated = await verifyPricePublication(archive, dist, officialPrices, {
+      fetcher, now: () => new Date('2026-11-17T17:18:01Z'), attempts: 1,
+    })
+    expect(repeated.versions[0].firstVerifiedAt).toBe('2026-11-16T17:18:01.000Z')
+  })
+
+  it('ne bilježi potvrdu kad se javni CSV razlikuje od izvora', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'salon-prices-test-'))
+    temporaryDirs.push(root)
+    const archive = join(root, 'archive')
+    const dist = join(root, 'dist')
+    const prepared = await preparePriceArchive(archive, dist, officialPrices)
+    const fetcher = async url => new Response(url.pathname.endsWith('manifest.json') ? JSON.stringify(prepared) : 'stari cjenik')
+    await expect(verifyPricePublication(archive, dist, officialPrices, { fetcher, attempts: 1 }))
+      .rejects.toThrow('Javnu objavu cjenika nije moguće potvrditi')
+    expect(JSON.parse(await readFile(join(archive, 'manifest.json'), 'utf8')).versions[0].firstVerifiedAt).toBeUndefined()
+  })
+
+  it('odbija zastarjeli javni manifest i zadržava arhivu bez promjene', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'salon-prices-test-'))
+    temporaryDirs.push(root)
+    const archive = join(root, 'archive')
+    const dist = join(root, 'dist')
+    const prepared = await preparePriceArchive(archive, dist, officialPrices)
+    const fetcher = async url => new Response(url.pathname.endsWith('manifest.json')
+      ? JSON.stringify({ ...prepared, current: 'stari.csv' }) : pricingCsv(officialPrices))
+    await expect(verifyPricePublication(archive, dist, officialPrices, { fetcher, attempts: 1 }))
+      .rejects.toThrow('Javnu objavu cjenika nije moguće potvrditi')
+    expect(JSON.parse(await readFile(join(archive, 'manifest.json'), 'utf8'))).toEqual(prepared)
   })
 })
