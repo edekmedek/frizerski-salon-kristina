@@ -367,7 +367,7 @@ export function ClientPortal({ clientId, onLogout }: { clientId: string; onLogou
   const [messages, setMessages] = useState<MessageRow[]>([])
   const [, setReminders] = useState<ReminderRow[]>([])
   const [photos, setPhotos] = useState<ClientPhoto[]>([])
-  const [priceList, setPriceList] = useState<PublicService[]>([])
+  const [, setPriceList] = useState<PublicService[]>([])
   const [bookableServices, setBookableServices] = useState<PublicService[]>([])
   const [requestCategory, setRequestCategory] = useState('')
   const [requestServiceIds, setRequestServiceIds] = useState<string[]>([])
